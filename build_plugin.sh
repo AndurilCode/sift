@@ -30,7 +30,26 @@ python3 -m zipapp "$BUILD_DIR/app" \
 rm -rf "$BUILD_DIR"
 
 SIZE=$(du -h "$SKILL_DIR/analyzer.pyz" | cut -f1)
-echo "Built: $SKILL_DIR/analyzer.pyz ($SIZE)"
+
+# Bump patch version in plugin.json and marketplace.json
+PLUGIN_JSON="$SCRIPT_DIR/.claude-plugin/plugin.json"
+MARKET_JSON="$SCRIPT_DIR/.claude-plugin/marketplace.json"
+
+OLD_VER=$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON'))['version'])")
+IFS='.' read -r MAJOR MINOR PATCH <<< "$OLD_VER"
+NEW_VER="$MAJOR.$MINOR.$((PATCH + 1))"
+
+python3 -c "
+import json
+for path in ['$PLUGIN_JSON', '$MARKET_JSON']:
+    with open(path) as f: d = json.load(f)
+    if 'version' in d: d['version'] = '$NEW_VER'
+    for p in d.get('plugins', []):
+        if 'version' in p: p['version'] = '$NEW_VER'
+    with open(path, 'w') as f: json.dump(d, f, indent=2); f.write('\n')
+"
+
+echo "Built: $SKILL_DIR/analyzer.pyz ($SIZE) — v$NEW_VER"
 
 # Auto-configure git hooks on first build
 HOOKS_PATH=$(git -C "$SCRIPT_DIR" config --local core.hooksPath 2>/dev/null || true)

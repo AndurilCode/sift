@@ -10,8 +10,10 @@ Token counts are estimated from message content length (~4 chars/token).
 """
 
 import json
+import os
 import sqlite3
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -238,6 +240,12 @@ def _parse_tracking_sessions(source_key: str) -> list[NormalizedSession]:
     return sessions
 
 
+def _parse_chat_job(args: tuple) -> Optional[NormalizedSession]:
+    """Top-level function for multiprocessing (must be picklable)."""
+    session_hash, agent_id, db_path, source_key = args
+    return _parse_chat_session(session_hash, agent_id, Path(db_path), source_key)
+
+
 class CursorSource(BaseSource):
 
     @property
@@ -252,24 +260,31 @@ class CursorSource(BaseSource):
         return CURSOR_DIR.exists() and (CHATS_DIR.exists() or TRACKING_DB.exists())
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
+        cutoff_ts = cutoff.timestamp() if cutoff else 0
         sessions = []
         seen_ids = set()
 
-        # 1. Parse chat stores
+        # 1. Parse chat stores in parallel
         if CHATS_DIR.exists():
-            for session_hash_dir in sorted(CHATS_DIR.iterdir()):
+            jobs = []
+            for session_hash_dir in CHATS_DIR.iterdir():
                 if not session_hash_dir.is_dir():
                     continue
-                for agent_dir in sorted(session_hash_dir.iterdir()):
+                for agent_dir in session_hash_dir.iterdir():
                     db_path = agent_dir / "store.db"
                     if not db_path.exists():
                         continue
-                    session = _parse_chat_session(
-                        session_hash_dir.name, agent_dir.name, db_path, self.key
-                    )
-                    if session and self.session_in_range(session, cutoff):
-                        sessions.append(session)
-                        seen_ids.add(session.session_id)
+                    if cutoff_ts and os.path.getmtime(db_path) < cutoff_ts:
+                        continue
+                    jobs.append((session_hash_dir.name, agent_dir.name, str(db_path), self.key))
+
+            if jobs:
+                workers = min(os.cpu_count() or 4, len(jobs))
+                with ProcessPoolExecutor(max_workers=workers) as pool:
+                    for session in pool.map(_parse_chat_job, jobs):
+                        if session and self.session_in_range(session, cutoff):
+                            sessions.append(session)
+                            seen_ids.add(session.session_id)
 
         # 2. Parse tracking DB conversations (skip if already found via chat)
         for session in _parse_tracking_sessions(self.key):

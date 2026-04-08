@@ -1,7 +1,9 @@
 """VS Code Copilot Chat session parser → NormalizedSession."""
 
 import json
+import os
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -159,6 +161,12 @@ def _parse_session(session_path: Path, source_key: str, project: str) -> Optiona
     )
 
 
+def _parse_job(args: tuple) -> Optional[NormalizedSession]:
+    """Top-level function for multiprocessing (must be picklable)."""
+    session_path, source_key, project = args
+    return _parse_session(Path(session_path), source_key, project)
+
+
 class VSCodeCopilotSource(BaseSource):
 
     @property
@@ -173,7 +181,9 @@ class VSCodeCopilotSource(BaseSource):
         return WORKSPACES_DIR.exists()
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
-        sessions = []
+        # Collect work items, skipping files older than cutoff by mtime
+        cutoff_ts = cutoff.timestamp() if cutoff else 0
+        jobs = []
 
         for workspace_dir in sorted(WORKSPACES_DIR.iterdir()):
             if not workspace_dir.is_dir():
@@ -184,8 +194,20 @@ class VSCodeCopilotSource(BaseSource):
 
             project = _get_workspace_project(workspace_dir)
 
-            for session_file in sorted(chat_dir.glob("*.json")):
-                session = _parse_session(session_file, self.key, project)
+            for session_file in chat_dir.glob("*.json"):
+                # Skip files not modified since cutoff (cheap stat vs expensive parse)
+                if cutoff_ts and os.path.getmtime(session_file) < cutoff_ts:
+                    continue
+                jobs.append((str(session_file), self.key, project))
+
+        if not jobs:
+            return []
+
+        # Parse in parallel
+        sessions = []
+        workers = min(os.cpu_count() or 4, len(jobs))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for session in pool.map(_parse_job, jobs):
                 if session and self.session_in_range(session, cutoff):
                     sessions.append(session)
 

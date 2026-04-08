@@ -6,7 +6,9 @@ Gemini provides full per-turn token data: input, output, cached, thoughts.
 """
 
 import json
+import os
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -140,6 +142,12 @@ def _parse_session(session_path: Path, project_hash: str, source_key: str) -> Op
     )
 
 
+def _parse_job(args: tuple) -> Optional[NormalizedSession]:
+    """Top-level function for multiprocessing (must be picklable)."""
+    session_path, project_hash, source_key = args
+    return _parse_session(Path(session_path), project_hash, source_key)
+
+
 class GeminiCLISource(BaseSource):
 
     @property
@@ -154,9 +162,10 @@ class GeminiCLISource(BaseSource):
         return GEMINI_DIR.exists()
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
-        sessions = []
+        cutoff_ts = cutoff.timestamp() if cutoff else 0
+        jobs = []
 
-        for project_dir in sorted(GEMINI_DIR.iterdir()):
+        for project_dir in GEMINI_DIR.iterdir():
             if not project_dir.is_dir():
                 continue
             chats_dir = project_dir / "chats"
@@ -165,8 +174,18 @@ class GeminiCLISource(BaseSource):
 
             project_hash = project_dir.name
 
-            for session_file in sorted(chats_dir.glob("session-*.json")):
-                session = _parse_session(session_file, project_hash, self.key)
+            for session_file in chats_dir.glob("session-*.json"):
+                if cutoff_ts and os.path.getmtime(session_file) < cutoff_ts:
+                    continue
+                jobs.append((str(session_file), project_hash, self.key))
+
+        if not jobs:
+            return []
+
+        sessions = []
+        workers = min(os.cpu_count() or 4, len(jobs))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for session in pool.map(_parse_job, jobs):
                 if session and session.total_tokens > 0 and self.session_in_range(session, cutoff):
                     sessions.append(session)
 

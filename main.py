@@ -18,12 +18,19 @@ Usage:
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from sources import ALL_SOURCES
 from sources.base import get_cutoff
 from metrics import compute_all
 from metrics.base import usd, tok
 import report
 import dashboard
+
+
+def _parse_source(source, cutoff):
+    """Parse a single source; returns (key, name, sessions)."""
+    sessions = source.parse_all(cutoff)
+    return source.key, source.name, sessions
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,16 +85,14 @@ def list_sources_and_projects(cutoff=None):
         if avail:
             available_keys.append(source.key)
 
-    # Parse sessions to discover projects
+    # Parse all available sources in parallel
     all_sessions = []
     source_names = {}
-    for SourceClass in ALL_SOURCES:
-        source = SourceClass()
-        if not source.available():
-            continue
-        sessions = source.parse_all(cutoff)
-        all_sessions.extend(sessions)
-        source_names[source.key] = source.name
+    available = [SC() for SC in ALL_SOURCES if SC().available()]
+    with ThreadPoolExecutor(max_workers=len(available) or 1) as pool:
+        for key, name, sessions in pool.map(lambda s: _parse_source(s, cutoff), available):
+            all_sessions.extend(sessions)
+            source_names[key] = name
 
     projects = defaultdict(lambda: {"sessions": 0, "sources": set()})
     for s in all_sessions:
@@ -119,22 +124,25 @@ def main():
     all_sessions = []
     source_names = {}
 
+    # Collect available sources
+    sources_to_parse = []
     for SourceClass in ALL_SOURCES:
         source = SourceClass()
-
-        # Skip sources not in filter
         if source_filter and source.key not in source_filter:
             continue
-
         if not source.available():
             print(f"  {source.name}: not found, skipping")
             continue
+        sources_to_parse.append(source)
 
-        print(f"Parsing {source.name}...")
-        sessions = source.parse_all(cutoff)
-        print(f"  {len(sessions)} sessions")
-        all_sessions.extend(sessions)
-        source_names[source.key] = source.name
+    # Parse all sources in parallel
+    with ThreadPoolExecutor(max_workers=len(sources_to_parse) or 1) as pool:
+        futures = {pool.submit(_parse_source, s, cutoff): s for s in sources_to_parse}
+        for future in futures:
+            key, name, sessions = future.result()
+            print(f"  {name}: {len(sessions)} sessions")
+            all_sessions.extend(sessions)
+            source_names[key] = name
 
     # Apply project filter
     all_sessions = filter_sessions(all_sessions, projects=args.project)

@@ -1,8 +1,10 @@
 """Claude Code session parser → NormalizedSession."""
 
 import json
+import os
 import re
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -234,6 +236,17 @@ def _parse_session(jsonl_path: Path, source_key: str, is_child: bool = False) ->
     )
 
 
+def _parse_job(args: tuple) -> Optional[NormalizedSession]:
+    """Top-level function for multiprocessing (must be picklable)."""
+    jsonl_path, source_key, project_name = args
+    session = _parse_session(Path(jsonl_path), source_key)
+    if session:
+        session.project = project_name
+        for child in session.children:
+            child.project = project_name
+    return session
+
+
 class ClaudeCodeSource(BaseSource):
 
     @property
@@ -248,20 +261,27 @@ class ClaudeCodeSource(BaseSource):
         return PROJECTS_DIR.exists()
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
-        sessions = []
+        cutoff_ts = cutoff.timestamp() if cutoff else 0
+        jobs = []  # (jsonl_path, source_key, project_name)
 
         for project_dir in sorted(PROJECTS_DIR.iterdir()):
             if not project_dir.is_dir():
                 continue
             project_name = _get_project_name(project_dir.name)
 
-            for jsonl_file in sorted(project_dir.glob("*.jsonl")):
-                session = _parse_session(jsonl_file, self.key)
+            for jsonl_file in project_dir.glob("*.jsonl"):
+                if cutoff_ts and os.path.getmtime(jsonl_file) < cutoff_ts:
+                    continue
+                jobs.append((str(jsonl_file), self.key, project_name))
+
+        if not jobs:
+            return []
+
+        sessions = []
+        workers = min(os.cpu_count() or 4, len(jobs))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for session in pool.map(_parse_job, jobs):
                 if session and session.total_tokens > 0 and self.session_in_range(session, cutoff):
-                    session.project = project_name
-                    # propagate project to children
-                    for child in session.children:
-                        child.project = project_name
                     sessions.append(session)
 
         return sessions

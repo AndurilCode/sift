@@ -9,8 +9,10 @@ Token data: session-level total only (no per-turn breakdown).
 """
 
 import json
+import os
 import sqlite3
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -128,8 +130,6 @@ class CodexCLISource(BaseSource):
         return STATE_DB.exists()
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
-        sessions = []
-
         try:
             db = sqlite3.connect(str(STATE_DB))
         except Exception:
@@ -151,7 +151,19 @@ class CodexCLISource(BaseSource):
 
         db.close()
 
-        for row in rows:
+        # Pre-filter by cutoff using created_at epoch
+        cutoff_epoch = cutoff.timestamp() if cutoff else 0
+        if cutoff_epoch:
+            rows = [r for r in rows if r[5] and float(r[5]) >= cutoff_epoch]
+
+        # Parse rollouts in parallel (the expensive part)
+        rollout_paths = [r[7] for r in rows]
+        workers = min(os.cpu_count() or 4, max(len(rollout_paths), 1))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            rollouts = list(pool.map(_parse_rollout, rollout_paths))
+
+        sessions = []
+        for row, rollout in zip(rows, rollouts):
             (thread_id, tokens_used, model, source, cwd, created_at, updated_at,
              rollout_path, first_user_message, model_provider,
              git_branch, git_origin_url, cli_version,
@@ -160,7 +172,6 @@ class CodexCLISource(BaseSource):
             timestamp_start = _epoch_to_iso(created_at)
             timestamp_end = _epoch_to_iso(updated_at)
 
-            # Duration
             duration_seconds = None
             if created_at and updated_at:
                 try:
@@ -168,13 +179,8 @@ class CodexCLISource(BaseSource):
                 except (ValueError, TypeError):
                     pass
 
-            # Project name from cwd
             project = Path(cwd).name if cwd else ""
 
-            # Enrich from rollout JSONL
-            rollout = _parse_rollout(rollout_path)
-
-            # Compute turns before first write from tool sequence
             turns_before_first_write = None
             exploration_count = 0
             for tool_name in rollout["tool_sequence"]:
@@ -184,11 +190,7 @@ class CodexCLISource(BaseSource):
                 if tool_name in EXPLORATION_TOOLS:
                     exploration_count += 1
 
-            # Use model from rollout (per-turn) or thread table
             final_model = rollout["model"] or model or ""
-
-            # Codex only gives total tokens — no input/output breakdown
-            # Store as input_tokens since most tokens in LLM calls are input
             usage = TokenUsage(input_tokens=tokens_used)
 
             session = NormalizedSession(
@@ -211,7 +213,7 @@ class CodexCLISource(BaseSource):
                     "timestamp": timestamp_start,
                 }] if first_user_message else []),
                 extras={
-                    "source_app": source,  # "cli" or "vscode"
+                    "source_app": source,
                     "model_provider": model_provider,
                     "cli_version": cli_version,
                     "approval_mode": approval_mode,

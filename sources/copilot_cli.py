@@ -1,8 +1,10 @@
 """Copilot CLI session parser → NormalizedSession."""
 
 import json
+import os
 import yaml
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -189,6 +191,12 @@ def _parse_session(session_dir: Path, source_key: str) -> Optional[NormalizedSes
     )
 
 
+def _parse_job(args: tuple) -> Optional[NormalizedSession]:
+    """Top-level function for multiprocessing (must be picklable)."""
+    session_dir, source_key = args
+    return _parse_session(Path(session_dir), source_key)
+
+
 class CopilotCLISource(BaseSource):
 
     @property
@@ -203,13 +211,28 @@ class CopilotCLISource(BaseSource):
         return SESSION_DIR.exists()
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
-        sessions = []
+        cutoff_ts = cutoff.timestamp() if cutoff else 0
+        jobs = []
 
-        for session_dir in sorted(SESSION_DIR.iterdir()):
+        for session_dir in SESSION_DIR.iterdir():
             if not session_dir.is_dir():
                 continue
-            session = _parse_session(session_dir, self.key)
-            if session and self.session_in_range(session, cutoff):
-                sessions.append(session)
+            events_path = session_dir / "events.jsonl"
+            if not events_path.exists():
+                continue
+            # Skip dirs not modified since cutoff
+            if cutoff_ts and os.path.getmtime(events_path) < cutoff_ts:
+                continue
+            jobs.append((str(session_dir), self.key))
+
+        if not jobs:
+            return []
+
+        sessions = []
+        workers = min(os.cpu_count() or 4, len(jobs))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for session in pool.map(_parse_job, jobs):
+                if session and self.session_in_range(session, cutoff):
+                    sessions.append(session)
 
         return sessions

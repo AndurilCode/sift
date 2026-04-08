@@ -25,6 +25,7 @@ from metrics import compute_all
 from metrics.base import usd, tok
 import report
 import dashboard
+import export_json
 
 
 def _parse_source(source, cutoff):
@@ -203,9 +204,10 @@ def main():
 
     print("")
 
-    # Generate report + dashboard
+    # Generate report + dashboard + JSON export
     report.generate(all_sessions, source_names, cutoff)
     dashboard.generate(all_sessions, source_names, cutoff)
+    export_json.generate(all_sessions, source_names, cutoff)
 
 
 if __name__ == "__main__":

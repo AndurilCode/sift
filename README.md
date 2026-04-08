@@ -1,6 +1,6 @@
-# AI Coding Assistant Usage Analyzer
+# Sift
 
-Cross-platform usage analytics for AI coding tools. Parses local session data, computes 27 metrics, and generates reports, an interactive dashboard, and a machine-readable JSON export.
+Cross-platform usage analytics for AI coding tools. Sifts through local session data, computes 27 metrics, and generates reports, an interactive dashboard, and a machine-readable JSON export.
 
 ## Supported Sources
 
@@ -42,7 +42,7 @@ python3 main.py --list --days 30
 
 ## Output
 
-All artifacts are written to `~/tuin/analysis/tokens/`:
+All artifacts are written to `~/.sift/`:
 
 | File | Description |
 |------|-------------|
@@ -61,6 +61,16 @@ All artifacts are written to `~/tuin/analysis/tokens/`:
 | Productivity | Edit/read ratio, turns before first write, lines ratio, prompt length distribution |
 | Health | Session health (median/P90/bloat), session outcome (success/failure), retry ratio, duration trend |
 | Adoption | Project adoption, top sessions, model routing efficiency |
+
+## Development
+
+Build the plugin (first run also configures git hooks for auto-rebuild on commit):
+
+```bash
+bash build_plugin.sh
+```
+
+After this, any commit that touches `.py` files will automatically rebuild `analyzer.pyz`.
 
 ## Requirements
 

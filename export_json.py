@@ -14,7 +14,7 @@ from pathlib import Path
 from sources.base import NormalizedSession
 from metrics import compute_all, get_all_metrics, session_cost, estimate_cost
 
-OUTPUT_DIR = Path.home() / "tuin" / "analysis" / "tokens"
+OUTPUT_DIR = Path.home() / ".sift"
 
 
 def _session_record(s: NormalizedSession) -> dict:
@@ -78,8 +78,8 @@ def generate(sessions: list[NormalizedSession], source_names: dict[str, str], cu
         }
 
     payload = {
-        "_schema": "ai-coding-assistant-export-v1",
-        "_description": "AI coding assistant usage metrics and per-session data. "
+        "_schema": "sift-export-v1",
+        "_description": "Sift — AI coding assistant usage metrics and per-session data. "
                         "Metrics are pre-computed aggregates. Sessions are raw records "
                         "with normalized fields and computed cost.",
         "generated": datetime.now().isoformat(),

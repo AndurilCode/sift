@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Rebuild analyzer.pyz if any source files changed
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PYZ="$REPO_ROOT/skills/usage-analysis/analyzer.pyz"
+
+# Check if any Python source files are staged
+STAGED=$(git diff --cached --name-only -- '*.py' 'sources/' 'metrics/')
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+echo "Source files changed — rebuilding analyzer.pyz..."
+bash "$REPO_ROOT/build_plugin.sh" >/dev/null
+
+# Stage the rebuilt binary
+git add "$PYZ"

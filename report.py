@@ -13,7 +13,7 @@ from sources.base import NormalizedSession
 from metrics import compute_all, get_all_metrics, session_cost
 from metrics.base import MetricResult, usd, tok
 
-OUTPUT_DIR = Path.home() / "tuin" / "analysis" / "tokens"
+OUTPUT_DIR = Path.home() / ".sift"
 
 
 def generate(sessions: list[NormalizedSession], source_names: dict[str, str], cutoff=None) -> Path:
@@ -34,7 +34,7 @@ def generate(sessions: list[NormalizedSession], source_names: dict[str, str], cu
     }
 
     L = []  # report lines
-    L.append("# AI Coding Assistant — Unified Report")
+    L.append("# Sift — AI Usage Report")
     L.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Range: {date_range}")
     sources_str = ", ".join(f"{v} (`{k}`)" for k, v in source_names.items())
     L.append(f"\nSources: {sources_str}\n")

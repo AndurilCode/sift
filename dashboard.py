@@ -12,7 +12,7 @@ from datetime import datetime
 from sources.base import NormalizedSession
 from metrics import estimate_cost, session_cost
 
-OUTPUT_DIR = Path.home() / "tuin" / "analysis" / "tokens"
+OUTPUT_DIR = Path.home() / ".sift"
 
 
 def _build_data(sessions: list[NormalizedSession], source_names: dict) -> dict:
@@ -76,7 +76,7 @@ def _build_data(sessions: list[NormalizedSession], source_names: dict) -> dict:
 _HTML = (
     r"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Coding Assistant Dashboard</title>
+<title>Sift — AI Usage Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 :root{
@@ -204,7 +204,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <button class="sidebar-toggle" id="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-brand">
-    <h1>AI Coding Assistant</h1>
+    <h1>Sift</h1>
     <p id="nav-sub">Dashboard</p>
   </div>
   <div class="sidebar-nav" id="sidebar-nav">

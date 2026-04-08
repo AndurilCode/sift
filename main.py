@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Coding Assistant Usage Analyzer — unified entry point.
+Sift — AI coding assistant usage analyzer.
 
 Discovers all available sources, parses sessions into a normalized schema,
 runs analysis, and generates a single unified report.
@@ -163,7 +163,7 @@ def main():
     comparison = results["platform_comparison"].data
 
     print("\n" + "=" * 70)
-    print("  AI CODING ASSISTANT — UNIFIED METRICS")
+    print("  SIFT — AI USAGE METRICS")
     print("=" * 70)
 
     print(f"\n  Total estimated cost:     {usd(eff['total_cost_usd'])}")

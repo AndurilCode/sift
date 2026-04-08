@@ -1,0 +1,10 @@
+{
+  "name": "sift",
+  "version": "1.0.0",
+  "description": "Sift — cross-platform AI coding assistant usage analytics, cost optimization, and session insights",
+  "author": {
+    "name": "gpavanello"
+  },
+  "license": "MIT",
+  "keywords": ["analytics", "tokens", "cost", "metrics", "usage", "sift"]
+}

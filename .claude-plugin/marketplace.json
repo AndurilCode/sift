@@ -1,0 +1,15 @@
+{
+  "name": "sift",
+  "description": "Sift — AI coding assistant usage analytics plugin",
+  "owner": {
+    "name": "gpavanello"
+  },
+  "plugins": [
+    {
+      "name": "sift",
+      "version": "1.0.0",
+      "description": "Sift — cross-platform AI coding assistant usage analytics, cost optimization, and session insights",
+      "source": "./"
+    }
+  ]
+}

@@ -84,36 +84,68 @@ _HTML = (
   --border:#333;--border2:#2a2a2a;
   --accent:#7c5aed;--accent-dim:rgba(124,90,237,.12);
   --blue:#60a5fa;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--pink:#ec4899;--teal:#14b8a6;
+  --sidebar-w:200px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:13px/1.5 system-ui,-apple-system,sans-serif;padding:24px 32px}
+body{background:var(--bg);color:var(--text);font:13px/1.5 system-ui,-apple-system,sans-serif}
 ::selection{background:var(--accent-dim)}
 
-/* Header */
-.header{margin-bottom:24px}
-.header h1{font-size:16px;font-weight:600;color:var(--text);margin-bottom:2px}
-.header p{font-size:12px;color:var(--text2)}
+/* ── Sidebar ── */
+.sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:var(--surface);border-right:1px solid var(--border2);display:flex;flex-direction:column;z-index:20;transition:transform .25s ease}
+.sidebar-brand{padding:16px 16px 12px;border-bottom:1px solid var(--border2)}
+.sidebar-brand h1{font-size:13px;font-weight:700;color:var(--text);line-height:1.3}
+.sidebar-brand p{font-size:10px;color:var(--text3);margin-top:2px}
+.sidebar-nav{padding:8px 0;border-bottom:1px solid var(--border2)}
+.sidebar-nav a{display:flex;align-items:center;gap:8px;padding:7px 16px;font-size:12px;color:var(--text2);text-decoration:none;border-left:2px solid transparent;transition:all .15s}
+.sidebar-nav a:hover{color:var(--text);background:var(--hover)}
+.sidebar-nav a.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-dim)}
+.sidebar-nav .nav-icon{width:16px;text-align:center;font-size:13px;flex-shrink:0}
+.sidebar-toggle{display:none;position:fixed;top:12px;left:12px;z-index:25;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text2);width:32px;height:32px;font-size:16px;cursor:pointer;align-items:center;justify-content:center}
 
-/* Filters - sticky top bar */
-.filter-bar{position:sticky;top:0;z-index:10;background:var(--bg);padding:12px 0 16px;border-bottom:1px solid var(--border2);margin-bottom:24px;display:flex;gap:10px;flex-wrap:wrap;align-items:end}
-.filter-bar .fg{display:flex;flex-direction:column;gap:3px}
-.filter-bar label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
-.filter-bar select,.filter-bar input[type=date]{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;min-width:150px;outline:none}
-.filter-bar select:focus,.filter-bar input:focus{border-color:var(--accent)}
-.filter-bar .btns{display:flex;gap:6px;padding-top:17px}
-.btn{border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity .15s}
+/* ── Sidebar filters ── */
+.sidebar-filters{flex:1;overflow-y:auto;padding:12px 16px}
+.sf-section{margin-bottom:14px}
+.sf-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px}
+.sf-select-all{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);cursor:pointer;margin-bottom:4px;padding:2px 0}
+.sf-select-all input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.sf-checks{max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.sf-checks label{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;color:var(--text2);cursor:pointer;line-height:1.3}
+.sf-checks label:hover{color:var(--text)}
+.sf-checks input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px;flex-shrink:0}
+.sf-date{display:flex;flex-direction:column;gap:4px}
+.sf-date input[type=date]{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;width:100%;outline:none}
+.sf-date input:focus{border-color:var(--accent)}
+.sf-range{display:flex;gap:4px;margin-top:6px}
+.sf-btns{display:flex;gap:4px;margin-top:10px}
+.btn{border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:500;cursor:pointer;transition:opacity .15s}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.85}
 .btn-ghost{background:var(--elevated);color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{background:var(--hover)}
-.pills{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn-sm{padding:4px 8px;font-size:10px}
+.sidebar-status{padding:8px 16px;border-top:1px solid var(--border2);font-size:10px;color:var(--text3)}
+
+/* ── Main content ── */
+.main{margin-left:var(--sidebar-w);padding:24px 32px;min-height:100vh}
+
+/* Header */
+.header{margin-bottom:20px}
+.header p{font-size:12px;color:var(--text2)}
+
+/* Active filter pills in main area */
+.pills-bar{margin-bottom:20px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-height:24px}
 .pill{font-size:11px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:9999px;display:flex;align-items:center;gap:4px}
 .pill button{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0}
 
 /* Grid */
 .grid{display:grid;gap:12px;margin-bottom:20px}
 .g-kpi{grid-template-columns:repeat(auto-fill,minmax(165px,1fr))}
+
+/* KPI clusters */
+.kpi-cluster{margin-bottom:16px}
+.kpi-cluster-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:8px;padding-left:2px}
+.kpi-cluster .grid{margin-bottom:0}
 .g4{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
 .g3{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
-.g2{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}
+.g2{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
 
 /* Cards */
 .card{background:var(--surface);border-radius:8px;padding:16px 20px}
@@ -126,18 +158,18 @@ body{background:var(--bg);color:var(--text);font:13px/1.5 system-ui,-apple-syste
 .card-hdr h3{margin-bottom:0}
 .info-btn{width:16px;height:16px;border-radius:9999px;border:1px solid var(--border);background:none;color:var(--text3);font-size:10px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;font-style:italic;font-family:Georgia,serif;line-height:1}
 .info-btn:hover{border-color:var(--accent);color:var(--accent)}
-.tooltip{display:none;position:absolute;top:22px;width:260px;background:var(--elevated);border:1px solid var(--border);border-radius:8px;padding:12px;font:normal 12px/1.6 system-ui,-apple-system,sans-serif;color:var(--text2);z-index:20;box-shadow:0 4px 16px rgba(0,0,0,.4);text-align:left;letter-spacing:0;text-transform:none}
+.tooltip{display:none;position:fixed;width:280px;background:var(--elevated);border:1px solid var(--border);border-radius:8px;padding:12px;font:normal 12px/1.6 system-ui,-apple-system,sans-serif;color:var(--text2);z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.5);text-align:left;letter-spacing:0;text-transform:none;pointer-events:none}
 .info-btn:hover .tooltip{display:block}
 .tooltip .tt-title{font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text);font-style:normal}
 .tooltip .tt-good{color:var(--green);font-size:10px;margin-top:4px}.tooltip .tt-bad{color:var(--red);font-size:10px;margin-top:2px}
 
 /* Sections */
-.section{margin-bottom:28px}
+.section{margin-bottom:28px;scroll-margin-top:24px}
 .section-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:8px 0;border-bottom:1px solid var(--border2);margin-bottom:16px;user-select:none}
 .section-hdr h2{font-size:13px;font-weight:600;color:var(--text)}
 .section-hdr .chevron{font-size:11px;color:var(--text3);transition:transform .2s}
 .section-hdr.collapsed .chevron{transform:rotate(-90deg)}
-.section-body{overflow:hidden;transition:max-height .3s ease}
+.section-body{transition:max-height .3s ease}
 .section-body.hidden{max-height:0!important;overflow:hidden}
 
 /* Gauge */
@@ -157,31 +189,80 @@ tr:hover td{background:var(--elevated)}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .badge{display:inline-block;padding:1px 8px;border-radius:9999px;font-size:11px;font-weight:500;background:var(--accent-dim);color:var(--accent)}
 
-@media(max-width:768px){body{padding:16px}.g2,.g3,.g4,.g5{grid-template-columns:1fr}.filter-bar{flex-direction:column}}
+/* ── Responsive ── */
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-toggle{display:flex}
+  .main{margin-left:0;padding:24px 16px;padding-top:52px}
+  .g2,.g3,.g4,.g5{grid-template-columns:1fr}
+}
 </style></head><body>
 
+<!-- Sidebar -->
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h1>AI Coding Assistant</h1>
+    <p id="nav-sub">Dashboard</p>
+  </div>
+  <div class="sidebar-nav" id="sidebar-nav">
+    <a href="#s-kpis" data-section="s-kpis"><span class="nav-icon">&#9632;</span>Overview</a>
+    <a href="#s-burn" data-section="s-burn"><span class="nav-icon">&#9650;</span>Spend</a>
+    <a href="#s-eff" data-section="s-eff"><span class="nav-icon">&#9673;</span>Efficiency</a>
+    <a href="#s-break" data-section="s-break"><span class="nav-icon">&#9638;</span>Breakdowns</a>
+    <a href="#s-ctx" data-section="s-ctx"><span class="nav-icon">&#9881;</span>Context</a>
+    <a href="#s-tables" data-section="s-tables"><span class="nav-icon">&#9776;</span>Details</a>
+  </div>
+  <div class="sidebar-filters">
+    <div class="sf-section">
+      <div class="sf-label">Platforms</div>
+      <label class="sf-select-all"><input type="checkbox" checked onchange="toggleAll('f-plats',this.checked)">Select all</label>
+      <div class="sf-checks" id="f-plats"></div>
+    </div>
+    <div class="sf-section">
+      <div class="sf-label">Projects</div>
+      <label class="sf-select-all"><input type="checkbox" checked onchange="toggleAll('f-projs',this.checked)">Select all</label>
+      <div class="sf-checks" id="f-projs" style="max-height:160px"></div>
+    </div>
+    <div class="sf-section">
+      <div class="sf-label">Date Range</div>
+      <div class="sf-date">
+        <input type="date" id="f-from" onchange="goDebounced()">
+        <input type="date" id="f-to" onchange="goDebounced()">
+      </div>
+      <div class="sf-range">
+        <button class="btn btn-ghost btn-sm" onclick="setRange(7)">7d</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRange(30)">30d</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRange(90)">90d</button>
+        <button class="btn btn-ghost btn-sm" onclick="setRange(0)">All</button>
+      </div>
+    </div>
+    <div class="sf-btns">
+      <button class="btn btn-ghost" onclick="rst()" style="flex:1">Reset filters</button>
+    </div>
+  </div>
+  <div class="sidebar-status" id="sidebar-status"></div>
+</nav>
+
+<!-- Main content -->
+<div class="main" id="main-content">
+
 <div class="header">
-  <h1>AI Coding Assistant Dashboard</h1>
   <p id="sub"></p>
 </div>
 
-<div class="filter-bar" id="filters">
-  <div class="fg"><label>Platform</label><select id="f-plat"><option value="">All platforms</option></select></div>
-  <div class="fg"><label>Project</label><select id="f-proj"><option value="">All projects</option></select></div>
-  <div class="fg"><label>From</label><input type="date" id="f-from"></div>
-  <div class="fg"><label>To</label><input type="date" id="f-to"></div>
-  <div class="btns">
-    <button class="btn btn-primary" onclick="go()">Apply</button>
-    <button class="btn btn-ghost" onclick="rst()">Reset</button>
-    <button class="btn btn-ghost" onclick="setRange(7)">7d</button>
-    <button class="btn btn-ghost" onclick="setRange(30)">30d</button>
-    <button class="btn btn-ghost" onclick="setRange(90)">90d</button>
-  </div>
-  <div class="pills" id="pills"></div>
-</div>
+<div class="pills-bar" id="pills"></div>
 
 <!-- KPIs -->
-<div class="grid g-kpi" id="kpis"></div>
+<div class="section" id="s-kpis">
+  <div class="section-hdr" onclick="toggle('s-kpis')"><h2>Overview</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body" id="kpis">
+    <div class="kpi-cluster"><div class="kpi-cluster-label">Cost & Usage</div><div class="grid g-kpi" id="kpi-cost"></div></div>
+    <div class="kpi-cluster"><div class="kpi-cluster-label">Cache & Context</div><div class="grid g-kpi" id="kpi-cache"></div></div>
+    <div class="kpi-cluster"><div class="kpi-cluster-label">Health & Productivity</div><div class="grid g-kpi" id="kpi-health"></div></div>
+  </div>
+</div>
 
 <!-- Primary: Daily Burn -->
 <div class="section" id="s-burn">
@@ -202,8 +283,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div class="grid g2">
       <div class="card" data-info="plat"><h3>Cost by Platform</h3><div class="cc"><canvas id="c-plat"></canvas></div></div>
       <div class="card" data-info="model"><h3>Cost by Model</h3><div class="cc"><canvas id="c-model"></canvas></div></div>
-    </div>
-    <div class="grid g2" style="margin-top:16px">
       <div class="card" data-info="tools"><h3>Top Tools</h3><div class="cc-tall"><canvas id="c-tools"></canvas></div></div>
       <div class="card" data-info="projects"><h3>Top Projects</h3><div class="cc-tall"><canvas id="c-proj"></canvas></div></div>
     </div>
@@ -217,8 +296,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div class="grid g2">
       <div class="card" data-info="stop"><h3>Stop Reasons</h3><div class="cc"><canvas id="c-stop"></canvas></div></div>
       <div class="card" data-info="erw"><h3>Productivity: Edit / Read / Write</h3><div class="cc"><canvas id="c-erw"></canvas></div></div>
-    </div>
-    <div class="grid g2" style="margin-top:16px">
       <div class="card" data-info="health"><h3>Session Size Distribution</h3><div class="cc"><canvas id="c-health"></canvas></div></div>
       <div class="card" id="tbfw-card" data-info="tbfw"><h3>Turns Before First Write</h3><div class="cc"><canvas id="c-tbfw"></canvas></div></div>
     </div>
@@ -229,12 +306,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 <div class="section" id="s-tables">
   <div class="section-hdr" onclick="toggle('s-tables')"><h2>Details</h2><span class="chevron">&#9660;</span></div>
   <div class="section-body">
-    <div class="grid g2">
-      <div class="card" data-info="platTable"><h3>Platform Comparison</h3><div><table id="t1"></table></div></div>
-      <div class="card" data-info="sessTable"><h3>Most Costly Sessions</h3><div class="table-scroll"><table id="t2"></table></div></div>
-    </div>
+    <div class="card" data-info="platTable" style="margin-bottom:12px"><h3>Platform Comparison</h3><div><table id="t1"></table></div></div>
+    <div class="card" data-info="sessTable"><h3>Most Costly Sessions</h3><div class="table-scroll"><table id="t2"></table></div></div>
   </div>
 </div>
+
+</div><!-- /main -->
 
 <script>
 const RAW=%%DATA_JSON%%;
@@ -247,50 +324,91 @@ const fmt={
   pct:n=>(n*100).toFixed(1)+'%',
   pct0:n=>Math.round(n*100)+'%'
 };
+let _goTimer=0;
+function goDebounced(){clearTimeout(_goTimer);_goTimer=setTimeout(go,150)}
 function sum(a,f){return a.reduce((s,x)=>s+(typeof f==='function'?f(x):x[f]||0),0)}
 function med(a){const s=[...a].sort((a,b)=>a-b);return s.length?s[s.length>>1]:0}
 function grp(a,k){const m={};a.forEach(x=>{const v=typeof k==='function'?k(x):x[k];(m[v]=m[v]||[]).push(x)});return m}
 
-// ── Filters ──
+// ── Filters (checkbox-based) ──
+const allDates=ALL.map(s=>s.date).filter(Boolean).sort();
+const minD=allDates[0]||'',maxD=allDates[allDates.length-1]||'';
+
 function initF(){
-  const pf=document.getElementById('f-plat'),pr=document.getElementById('f-proj');
-  pf.innerHTML='<option value="">All platforms</option>';
-  new Set(ALL.map(s=>s.source)).forEach(p=>pf.innerHTML+=`<option value="${p}">${SN[p]||p}</option>`);
-  pr.innerHTML='<option value="">All projects</option>';
-  [...new Set(ALL.map(s=>s.project))].sort().forEach(p=>pr.innerHTML+=`<option value="${p}">${p.length>45?p.slice(0,45)+'...':p}</option>`);
-  const d=ALL.map(s=>s.date).filter(Boolean).sort();
-  if(d.length){document.getElementById('f-from').value=d[0];document.getElementById('f-to').value=d[d.length-1]}
+  // Platforms
+  const pf=document.getElementById('f-plats');pf.innerHTML='';
+  [...new Set(ALL.map(s=>s.source))].sort().forEach(src=>{
+    const id='fp-'+src.replace(/\W/g,'');
+    pf.innerHTML+=`<label title="${SN[src]||src}"><input type="checkbox" id="${id}" value="${src}" checked onchange="goDebounced()">${SN[src]||src}</label>`;
+  });
+  // Projects
+  const pr=document.getElementById('f-projs');pr.innerHTML='';
+  [...new Set(ALL.map(s=>s.project))].sort().forEach(p=>{
+    const id='fj-'+p.replace(/\W/g,'').slice(0,20);
+    const short=p.length>28?p.slice(0,28)+'...':p;
+    pr.innerHTML+=`<label title="${p}"><input type="checkbox" class="proj-cb" value="${p}" checked onchange="goDebounced()">${short}</label>`;
+  });
+  // Dates
+  if(minD){document.getElementById('f-from').value=minD;document.getElementById('f-to').value=maxD}
+}
+function getChecked(containerId){
+  return [...document.querySelectorAll('#'+containerId+' input[type=checkbox]')]
+    .filter(cb=>cb.checked).map(cb=>cb.value);
+}
+function getUnchecked(containerId){
+  return [...document.querySelectorAll('#'+containerId+' input[type=checkbox]')]
+    .filter(cb=>!cb.checked).map(cb=>cb.value);
 }
 function go(){
-  const pl=document.getElementById('f-plat').value,pj=document.getElementById('f-proj').value,
+  const plats=new Set(getChecked('f-plats')),projs=new Set(getChecked('f-projs')),
         fr=document.getElementById('f-from').value,to=document.getElementById('f-to').value;
   F=ALL.filter(s=>{
-    if(pl&&s.source!==pl)return false;
-    if(pj&&s.project!==pj)return false;
+    if(!plats.has(s.source))return false;
+    if(!projs.has(s.project))return false;
     if(fr&&(!s.date||s.date<fr))return false;
     if(to&&(!s.date||s.date>to))return false;
     return true;
   });
   showPills();render();
+  document.getElementById('sidebar-status').textContent=F.length+' of '+ALL.length+' sessions';
 }
-function rst(){document.getElementById('f-plat').value='';document.getElementById('f-proj').value='';initF();F=ALL;showPills();render()}
+function rst(){
+  document.querySelectorAll('#f-plats input,#f-projs input').forEach(cb=>cb.checked=true);
+  if(minD){document.getElementById('f-from').value=minD;document.getElementById('f-to').value=maxD}
+  F=ALL;showPills();render();
+  document.getElementById('sidebar-status').textContent=F.length+' of '+ALL.length+' sessions';
+}
 function setRange(days){
-  const to=new Date(),fr=new Date();fr.setDate(fr.getDate()-days);
-  document.getElementById('f-from').value=fr.toISOString().slice(0,10);
-  document.getElementById('f-to').value=to.toISOString().slice(0,10);
+  if(days===0){
+    document.getElementById('f-from').value=minD;
+    document.getElementById('f-to').value=maxD;
+  } else {
+    const t=new Date(),f=new Date();f.setDate(f.getDate()-days);
+    document.getElementById('f-from').value=f.toISOString().slice(0,10);
+    document.getElementById('f-to').value=t.toISOString().slice(0,10);
+  }
   go();
 }
 function showPills(){
   const el=document.getElementById('pills');el.innerHTML='';
-  const pl=document.getElementById('f-plat').value,pj=document.getElementById('f-proj').value,
+  const offPlats=getUnchecked('f-plats'),offProjs=getUnchecked('f-projs'),
         fr=document.getElementById('f-from').value,to=document.getElementById('f-to').value;
-  const allDates=ALL.map(s=>s.date).filter(Boolean).sort();
-  const minD=allDates[0]||'',maxD=allDates[allDates.length-1]||'';
-  if(pl)el.innerHTML+=`<span class="pill">${SN[pl]||pl}<button onclick="document.getElementById('f-plat').value='';go()">&#10005;</button></span>`;
-  if(pj)el.innerHTML+=`<span class="pill">${pj.length>30?pj.slice(0,30)+'...':pj}<button onclick="document.getElementById('f-proj').value='';go()">&#10005;</button></span>`;
+  // Show pills for unchecked platforms (inverted: show what's filtered OUT)
+  offPlats.forEach(src=>{
+    el.innerHTML+=`<span class="pill">-${SN[src]||src}<button onclick="document.querySelector('#f-plats input[value=&quot;${src}&quot;]').checked=true;go()">&#10005;</button></span>`;
+  });
+  offProjs.forEach(p=>{
+    const short=p.length>20?p.slice(0,20)+'...':p;
+    el.innerHTML+=`<span class="pill">-${short}<button onclick="document.querySelector('#f-projs input[value=&quot;${CSS.escape(p)}&quot;]').checked=true;go()">&#10005;</button></span>`;
+  });
   if(fr&&fr!==minD)el.innerHTML+=`<span class="pill">From: ${fr}<button onclick="document.getElementById('f-from').value='${minD}';go()">&#10005;</button></span>`;
   if(to&&to!==maxD)el.innerHTML+=`<span class="pill">To: ${to}<button onclick="document.getElementById('f-to').value='${maxD}';go()">&#10005;</button></span>`;
-  el.innerHTML+=`<span style="font-size:11px;color:var(--text3)">${F.length} sessions</span>`;
+  if(!el.innerHTML)el.innerHTML=`<span style="font-size:11px;color:var(--text3)">Showing all ${F.length} sessions</span>`;
+}
+
+function toggleAll(containerId,checked){
+  document.querySelectorAll('#'+containerId+' input[type=checkbox]').forEach(cb=>cb.checked=checked);
+  clearTimeout(_goTimer);go();
 }
 
 // ── Collapsible sections ──
@@ -301,9 +419,10 @@ function toggle(id){
 
 // ── Chart helpers ──
 function mc(id,cfg){if(CH[id])CH[id].destroy();CH[id]=new Chart(document.getElementById(id),cfg)}
-function dg(parent,id,value,max,color,label,sublabel){
+function dg(parent,id,value,max,color,label,sublabel,info){
   const el=document.createElement('div');el.className='card card-sm';
-  el.innerHTML=`<div class="gauge"><canvas id="${id}"></canvas></div><div class="gauge-label">${sublabel}</div>`;
+  const tip=info?`<button class="info-btn" onmouseenter="positionTip(this)">i<div class="tooltip"><div class="tt-title">${info.title||sublabel}</div>${info.desc||''}<div class="tt-good">\u2713 Good: ${info.good||''}</div><div class="tt-bad">\u2717 Bad: ${info.bad||''}</div></div></button>`:'';
+  el.innerHTML=`<div class="card-hdr"><h3>${sublabel}</h3>${tip}</div><div class="gauge"><canvas id="${id}"></canvas></div>`;
   parent.appendChild(el);
   const p=Math.min(value/max,1);
   mc(id,{type:'doughnut',data:{datasets:[{data:[p*100,100-p*100],backgroundColor:[color,'rgba(255,255,255,.04)'],borderWidth:0,circumference:270,rotation:225}]},
@@ -322,13 +441,27 @@ function kpi(parent,label,value,sub,color,info){
 function positionTip(btn){
   const tip=btn.querySelector('.tooltip');if(!tip)return;
   const r=btn.getBoundingClientRect();
-  // If button is in the left half of viewport, open tooltip to the right
-  if(r.left<window.innerWidth/2){tip.style.left='0';tip.style.right='auto'}
-  else{tip.style.right='0';tip.style.left='auto'}
+  // Position fixed relative to viewport
+  const spaceBelow=window.innerHeight-r.bottom;
+  const spaceRight=window.innerWidth-r.right;
+  // Vertical: prefer below, flip up if not enough space
+  if(spaceBelow<200){tip.style.top='';tip.style.bottom=(window.innerHeight-r.top+4)+'px'}
+  else{tip.style.bottom='';tip.style.top=(r.bottom+4)+'px'}
+  // Horizontal: prefer right-aligned to button, shift left if clipped
+  if(spaceRight<290){tip.style.left='';tip.style.right='12px'}
+  else{tip.style.right='';tip.style.left=Math.max(8,r.left-130)+'px'}
 }
 
 // ── Render ──
 function render(){
+  if(F.length===0){
+    // Clear everything when no sessions match
+    Object.keys(CH).forEach(k=>{CH[k].destroy();delete CH[k]});
+    ['kpi-cost','kpi-cache','kpi-health','gauges'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML=''});
+    document.getElementById('sub').textContent='0 sessions match current filters';
+    document.getElementById('t1').innerHTML='';document.getElementById('t2').innerHTML='';
+    return;
+  }
   const n=F.length,tc=sum(F,'cost'),to=sum(F,'output'),tpo=sum(F,'parent_output'),ti=sum(F,'input'),cr=sum(F,'cache_read'),cw=sum(F,'cache_write'),
     tt=sum(F,'tokens'),ttc=sum(F,'tool_calls'),te=sum(F,'edits'),tw=sum(F,'writes'),tr=sum(F,'reads'),
     tm=sum(F,'msgs'),tcc=sum(F,'child_cost'),tcmp=sum(F,'compactions'),
@@ -345,47 +478,60 @@ function render(){
 
   document.getElementById('sub').textContent=`${n.toLocaleString()} of ${ALL.length.toLocaleString()} sessions \u00b7 ${Object.keys(SN).length} sources \u00b7 Generated ${new Date(RAW.generated).toLocaleString()}`;
 
-  // ── KPIs ──
-  const kg=document.getElementById('kpis');kg.innerHTML='';
+  // ── KPIs (clustered) ──
+  const kCost=document.getElementById('kpi-cost');kCost.innerHTML='';
+  const kCache=document.getElementById('kpi-cache');kCache.innerHTML='';
+  const kHealth=document.getElementById('kpi-health');kHealth.innerHTML='';
   const cps=tc/Math.max(n,1);
-  kpi(kg,'Total Cost',fmt.usd(tc),`${fmt.usd(cps)}/session`,null,
+
+  // Cluster 1: Cost & Usage
+  kpi(kCost,'Total Cost',fmt.usd(tc),`${fmt.usd(cps)}/session`,null,
     {desc:'Total estimated spend across all AI coding tools based on per-model token pricing.',good:'Trending down or stable',bad:'Unexpected spikes or sustained growth'});
-  kpi(kg,'Sessions',n.toLocaleString(),`${Object.keys(grp(F,'project')).length} projects`,null,
+  kpi(kCost,'Sessions',n.toLocaleString(),`${Object.keys(grp(F,'project')).length} projects`,null,
     {desc:'Number of AI assistant sessions. More sessions = more adoption, but watch cost per session.',good:'Growing adoption with stable cost/session',bad:'High session count with no productivity gain'});
-  kpi(kg,'Output Ratio',fmt.pct(or_net),`${fmt.tok(tpo)} output tokens \u00b7 Gross: ${fmt.pct(or_gross)}`,or_net<0.01?'red':or_net<0.03?'yellow':'green',
-    {desc:'Output tokens vs fresh input (excluding cache reads). Net ratio shows how much new output is generated per unit of new input. Gross includes cache replays.',good:'Net above 2% for coding tasks',bad:'Net below 1% means heavy context overhead even after caching'});
-  kpi(kg,'Cache Hit Rate',fmt.pct(chr),`Saving ${fmt.usd(cr/1e6*2.7)}`,chr>.7?'green':chr>.4?'yellow':'red',
-    {desc:'Fraction of input tokens served from cache (10x cheaper than uncached). Measures how well prompts reuse prior context.',good:'Above 70% \u2014 stable prompt prefixes',bad:'Below 40% \u2014 prompts changing too much between turns'});
-  kpi(kg,'Input Freshness',fmt.pct(fr),fr<.1?'Stable prompts':'High \u2014 poor reuse',fr<.1?'green':fr<.3?'yellow':'red',
-    {desc:'Fraction of input that is uncached (new). Lower means prompts are stable and cache is effective.',good:'Below 10% by turn 20',bad:'Above 30% means prompt structure keeps changing'});
-  kpi(kg,'Cache Amortization',ca.toFixed(1)+'x',ca>1?'Net positive':'Net negative',ca>5?'green':ca>1?'yellow':'red',
-    {desc:'How many times each cache write is reused. Cache writes cost 25% more than regular input, so you need at least 1 read per write to break even.',good:'Above 5x \u2014 excellent ROI on caching',bad:'Below 1x \u2014 paying more for cache writes than you save'});
-  kpi(kg,'Cost/Action',fmt.usd(tc/Math.max(prod,1)),`${prod.toLocaleString()} Edit+Write`,null,
+  kpi(kCost,'Cost/Action',fmt.usd(tc/Math.max(prod,1)),`${prod.toLocaleString()} Edit+Write`,null,
     {desc:'Cost per code-modifying action (Edit + Write). The real price of each code change the AI makes.',good:'Decreasing over time',bad:'Rising means more context overhead per productive action'});
   const costMin=ds.length?sum(ds,'cost')/Math.max(sum(ds,'dur')/60,.01):0;
-  kpi(kg,'Cost/Minute',fmt.usd(costMin),`${ds.length} sessions w/ duration`,null,
+  kpi(kCost,'Cost/Minute',fmt.usd(costMin),`${ds.length} sessions w/ duration`,null,
     {desc:'Time-normalized spend. Reveals if long sessions are cost-efficient or wasteful.',good:'Stable or decreasing',bad:'High and rising \u2014 sessions accumulating expensive context'});
-  kpi(kg,'Context Growth',fmt.tok(tt/Math.max(tm,1))+'/msg',`Median: ${fmt.tok(med(F.filter(s=>s.msgs>0).map(s=>s.tokens/s.msgs)))}/msg`,null,
+
+  // Cluster 2: Cache & Context
+  kpi(kCache,'Output Ratio',fmt.pct(or_net),`${fmt.tok(tpo)} output tokens \u00b7 Gross: ${fmt.pct(or_gross)}`,or_net<0.01?'red':or_net<0.03?'yellow':'green',
+    {desc:'Output tokens vs fresh input (excluding cache reads). Net ratio shows how much new output is generated per unit of new input. Gross includes cache replays.',good:'Net above 2% for coding tasks',bad:'Net below 1% means heavy context overhead even after caching'});
+  kpi(kCache,'Cache Hit Rate',fmt.pct(chr),`Saving ${fmt.usd(cr/1e6*2.7)}`,chr>.7?'green':chr>.4?'yellow':'red',
+    {desc:'Fraction of input tokens served from cache (10x cheaper than uncached). Measures how well prompts reuse prior context.',good:'Above 70% \u2014 stable prompt prefixes',bad:'Below 40% \u2014 prompts changing too much between turns'});
+  kpi(kCache,'Input Freshness',fmt.pct(fr),fr<.1?'Stable prompts':'High \u2014 poor reuse',fr<.1?'green':fr<.3?'yellow':'red',
+    {desc:'Fraction of input that is uncached (new). Lower means prompts are stable and cache is effective.',good:'Below 10% by turn 20',bad:'Above 30% means prompt structure keeps changing'});
+  kpi(kCache,'Cache Amortization',ca.toFixed(1)+'x',ca>1?'Net positive':'Net negative',ca>5?'green':ca>1?'yellow':'red',
+    {desc:'How many times each cache write is reused. Cache writes cost 25% more than regular input, so you need at least 1 read per write to break even.',good:'Above 5x \u2014 excellent ROI on caching',bad:'Below 1x \u2014 paying more for cache writes than you save'});
+  kpi(kCache,'Context Growth',fmt.tok(tt/Math.max(tm,1))+'/msg',`Median: ${fmt.tok(med(F.filter(s=>s.msgs>0).map(s=>s.tokens/s.msgs)))}/msg`,null,
     {desc:'Average tokens consumed per assistant turn. Each turn replays the full conversation, so this grows as sessions get longer.',good:'Below 100K tokens/msg',bad:'Above 500K \u2014 sessions are accumulating too much context per turn'});
-  kpi(kg,'Bloat Index',(Math.max(...tka,0)/Math.max(mk,1)).toFixed(0)+'x',`${tka.filter(t=>t>5e7).length} over 50M`,Math.max(...tka,0)/Math.max(mk,1)>100?'red':'yellow',
-    {desc:'Ratio of the most expensive session to the median. High values mean a few sessions dominate cost.',good:'Below 50x \u2014 consistent session sizes',bad:'Above 200x \u2014 runaway sessions distort spend'});
-  kpi(kg,'Subagent Overhead',fmt.pct(tcc/Math.max(tc,.01)),`${fmt.pct(tcmp/Math.max(F.filter(s=>s.source==='claude-code').length,1))} compaction`,null,
-    {desc:'Percentage of total cost from spawned subagents. Each subagent duplicates base context. Compaction agents fire when sessions blow the context window.',good:'Below 10% with low compaction',bad:'Above 20% \u2014 consider CLAUDE_CODE_SUBAGENT_MODEL=haiku'});
-  if(tos.length)kpi(kg,'Tool Def Overhead',fmt.pct(tov),`${tos.length} sessions`,tov>.3?'red':tov>.15?'yellow':'green',
+  if(tos.length)kpi(kCache,'Tool Def Overhead',fmt.pct(tov),`${tos.length} sessions`,tov>.3?'red':tov>.15?'yellow':'green',
     {desc:'Fraction of the context window consumed by tool/function schemas alone, before any messages. Measured from Copilot CLI shutdown data.',good:'Below 15%',bad:'Above 30% \u2014 too many tools registered, eating context'});
-  if(tbfw.length)kpi(kg,'Turns Before Write',(sum(tbfw,v=>v)/tbfw.length).toFixed(1),`Median: ${med(tbfw)} \u00b7 Never: ${nw}`,'accent',
+
+  // Cluster 3: Health & Productivity
+  kpi(kHealth,'Bloat Index',(Math.max(...tka,0)/Math.max(mk,1)).toFixed(0)+'x',`${tka.filter(t=>t>5e7).length} over 50M`,Math.max(...tka,0)/Math.max(mk,1)>100?'red':'yellow',
+    {desc:'Ratio of the most expensive session to the median. High values mean a few sessions dominate cost.',good:'Below 50x \u2014 consistent session sizes',bad:'Above 200x \u2014 runaway sessions distort spend'});
+  kpi(kHealth,'Subagent Overhead',fmt.pct(tcc/Math.max(tc,.01)),`${fmt.pct(tcmp/Math.max(F.filter(s=>s.source==='claude-code').length,1))} compaction`,null,
+    {desc:'Percentage of total cost from spawned subagents. Each subagent duplicates base context. Compaction agents fire when sessions blow the context window.',good:'Below 10% with low compaction',bad:'Above 20% \u2014 consider CLAUDE_CODE_SUBAGENT_MODEL=haiku'});
+  if(tbfw.length)kpi(kHealth,'Turns Before Write',(sum(tbfw,v=>v)/tbfw.length).toFixed(1),`Median: ${med(tbfw)} \u00b7 Never: ${nw}`,'accent',
     {desc:'How many exploration tool calls (Read, Bash, Grep) happen before the first production action (Edit, Write). Measures ramp-up time.',good:'Below 10 for focused tasks',bad:'Above 25 \u2014 prompts may be too vague, causing excessive exploration'});
   const tlr=sum(F,'lines_read'),tlg=sum(F,'lines_gen'),lrSessions=F.filter(s=>s.lines_read>0||s.lines_gen>0).length;
-  if(lrSessions>0)kpi(kg,'Lines Read/Generated',tlg>0?(tlr/tlg).toFixed(1)+'x':'\u221e',`${tlr.toLocaleString()} read \u00b7 ${tlg.toLocaleString()} generated`,null,
+  if(lrSessions>0)kpi(kHealth,'Lines Read/Generated',tlg>0?(tlr/tlg).toFixed(1)+'x':'\u221e',`${tlr.toLocaleString()} read \u00b7 ${tlg.toLocaleString()} generated`,null,
     {desc:'Ratio of lines read from files vs net lines generated (Write + Edit delta). Shows how much context the AI consumes per line of output.',good:'Below 3x \u2014 focused, efficient generation',bad:'Above 10x \u2014 excessive reading relative to output'});
 
   // ── Gauges ──
   const gg=document.getElementById('gauges');gg.innerHTML='';
-  dg(gg,'g1',or_net,.1,'#7c5aed',fmt.pct(or_net),'Output Ratio (net)');
-  dg(gg,'g2',chr,1,'#22c55e',fmt.pct(chr),'Cache Hit Rate');
-  dg(gg,'g3',1-fr,1,fr<.1?'#22c55e':'#f59e0b',fmt.pct(fr),'Input Freshness');
-  if(tos.length)dg(gg,'g4',tov,1,tov>.3?'#ef4444':'#22c55e',fmt.pct(tov),'Tool Def Overhead');
-  if(prod+tr>0)dg(gg,'g5',Math.min(prod/Math.max(tr,1),3),3,'#60a5fa',(prod/Math.max(tr,1)).toFixed(2),'Edit/Read Ratio');
+  dg(gg,'g1',or_net,.1,'#7c5aed',fmt.pct(or_net),'Output Ratio (net)',
+    {desc:'Output tokens vs fresh input. Shows how much new content the model generates per unit of new input.',good:'Above 2% for coding tasks',bad:'Below 1% \u2014 heavy context overhead'});
+  dg(gg,'g2',chr,1,'#22c55e',fmt.pct(chr),'Cache Hit Rate',
+    {desc:'Fraction of input tokens served from cache (10x cheaper). Measures prompt prefix stability.',good:'Above 70%',bad:'Below 40% \u2014 prompts changing too much'});
+  dg(gg,'g3',1-fr,1,fr<.1?'#22c55e':'#f59e0b',fmt.pct(fr),'Input Freshness',
+    {desc:'Fraction of input that is uncached (new). Lower = stable prompts with good cache reuse.',good:'Below 10%',bad:'Above 30% \u2014 poor cache utilization'});
+  if(tos.length)dg(gg,'g4',tov,1,tov>.3?'#ef4444':'#22c55e',fmt.pct(tov),'Tool Def Overhead',
+    {desc:'Context window consumed by tool/function schemas before any messages.',good:'Below 15%',bad:'Above 30% \u2014 too many tools registered'});
+  if(prod+tr>0)dg(gg,'g5',Math.min(prod/Math.max(tr,1),3),3,'#60a5fa',(prod/Math.max(tr,1)).toFixed(2),'Edit/Read Ratio',
+    {desc:'Production actions (Edit+Write) vs exploration (Read). Shows whether sessions produce code or just read it.',good:'Above 1.0 \u2014 producing more than exploring',bad:'Below 0.5 \u2014 stuck in exploration loops'});
 
   // ── Burn chart (area) ──
   // Fill missing dates — only between first and last active day (skip long inactive tails)
@@ -495,6 +641,40 @@ document.querySelectorAll('[data-info]').forEach(card=>{
 });
 
 initF();render();
+
+// ── Scroll-spy for sidebar nav ──
+const navLinks=document.querySelectorAll('.sidebar-nav a[data-section]');
+const sectionIds=[...navLinks].map(a=>a.dataset.section);
+function updateNav(){
+  const scrollY=window.scrollY||document.documentElement.scrollTop;
+  let current='';
+  for(const id of sectionIds){
+    const el=document.getElementById(id);
+    if(el&&el.offsetTop-120<=scrollY)current=id;
+  }
+  navLinks.forEach(a=>{a.classList.toggle('active',a.dataset.section===current)});
+}
+window.addEventListener('scroll',updateNav,{passive:true});
+updateNav();
+
+// Smooth scroll on nav click + close mobile sidebar
+navLinks.forEach(a=>{
+  a.addEventListener('click',e=>{
+    e.preventDefault();
+    const el=document.getElementById(a.dataset.section);
+    if(el){
+      // Expand section if collapsed
+      const body=el.querySelector('.section-body');
+      if(body&&body.classList.contains('hidden')){
+        body.classList.remove('hidden');
+        const hdr=el.querySelector('.section-hdr');
+        if(hdr)hdr.classList.remove('collapsed');
+      }
+      el.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+    document.getElementById('sidebar').classList.remove('open');
+  });
+});
 </script></body></html>"""
 )
 

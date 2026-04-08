@@ -2,18 +2,19 @@
 
 Cross-platform usage analytics for AI coding tools. Sifts through local session data, computes 27 metrics, and generates reports, an interactive dashboard, and a machine-readable JSON export.
 
-## Supported Sources
+## Install as Claude Code Plugin
 
-| Source | Data Location |
-|--------|--------------|
-| Claude Code | `~/.claude/projects/` |
-| Copilot CLI | `~/.copilot/session-state/` |
-| VS Code Copilot Chat | `~/Library/Application Support/Code/User/workspaceStorage/` |
-| Cursor | `~/.cursor/chats/` + `~/.cursor/ai-tracking/` |
-| Gemini CLI | `~/.gemini/tmp/` |
-| Codex CLI | `~/.codex/state_*.sqlite` |
+```bash
+# Add the marketplace
+/plugin marketplace add AndurilCode/sift
 
-## Usage
+# Install the plugin
+/plugin install sift@sift
+```
+
+Then use `/sift` in any conversation to analyze your AI usage.
+
+## Standalone Usage
 
 ```bash
 # All time, all sources
@@ -39,6 +40,17 @@ python3 main.py --days 30 --source claude-code --project my-repo
 python3 main.py --list
 python3 main.py --list --days 30
 ```
+
+## Supported Sources
+
+| Source | Data Location |
+|--------|--------------|
+| Claude Code | `~/.claude/projects/` |
+| Copilot CLI | `~/.copilot/session-state/` |
+| VS Code Copilot Chat | `~/Library/Application Support/Code/User/workspaceStorage/` |
+| Cursor | `~/.cursor/chats/` + `~/.cursor/ai-tracking/` |
+| Gemini CLI | `~/.gemini/tmp/` |
+| Codex CLI | `~/.codex/state_*.sqlite` |
 
 ## Output
 
@@ -70,7 +82,7 @@ Build the plugin (first run also configures git hooks for auto-rebuild on commit
 bash build_plugin.sh
 ```
 
-After this, any commit that touches `.py` files will automatically rebuild `analyzer.pyz`.
+After this, any commit that touches `.py` files will automatically rebuild `analyzer.pyz` and bump the plugin version.
 
 ## Requirements
 

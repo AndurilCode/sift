@@ -6,11 +6,18 @@ Discovers all available sources, parses sessions into a normalized schema,
 runs analysis, and generates a single unified report.
 
 Usage:
-    python3 main.py                       # all time
-    SINCE_DAYS=7 python3 main.py          # last 7 days
-    SINCE_DATE=2026-03-01 python3 main.py # since date
+    python3 main.py                          # all time, all sources
+    python3 main.py --list                   # list sources and projects
+    python3 main.py --list --days 30         # list projects from last 30 days
+    python3 main.py --days 7                 # last 7 days
+    python3 main.py --since 2026-03-01       # since date
+    python3 main.py --source claude-code     # single source
+    python3 main.py --source claude-code --source copilot-cli
+    python3 main.py --project my-repo        # filter by project (substring)
+    python3 main.py --days 30 --source claude-code --project my-repo
 """
 
+import argparse
 from sources import ALL_SOURCES
 from sources.base import get_cutoff
 from metrics import compute_all
@@ -19,13 +26,106 @@ import report
 import dashboard
 
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Analyze AI coding assistant usage across tools.",
+    )
+    p.add_argument(
+        "--list", action="store_true",
+        help="List available sources and discovered projects, then exit.",
+    )
+    date_group = p.add_mutually_exclusive_group()
+    date_group.add_argument(
+        "--days", type=int, metavar="N",
+        help="Analyze the last N days",
+    )
+    date_group.add_argument(
+        "--since", type=str, metavar="DATE",
+        help="Analyze since date (ISO format, e.g. 2026-03-01)",
+    )
+    p.add_argument(
+        "--source", action="append", metavar="KEY",
+        help="Include only these sources (e.g. claude-code, copilot-cli). Repeatable.",
+    )
+    p.add_argument(
+        "--project", action="append", metavar="NAME",
+        help="Include only sessions whose project contains NAME (case-insensitive). Repeatable.",
+    )
+    return p.parse_args()
+
+
+def filter_sessions(sessions, *, projects=None):
+    """Filter sessions by project name substring (case-insensitive)."""
+    if not projects:
+        return sessions
+    lowers = [p.lower() for p in projects]
+    return [s for s in sessions if any(p in s.project.lower() for p in lowers)]
+
+
+def list_sources_and_projects(cutoff=None):
+    """Print available sources and all discovered projects."""
+    from collections import defaultdict
+
+    print("\nSources:")
+    print(f"  {'Key':<20} {'Name':<25} {'Available'}")
+    print(f"  {'-'*60}")
+    available_keys = []
+    for SourceClass in ALL_SOURCES:
+        source = SourceClass()
+        avail = source.available()
+        mark = "yes" if avail else "no"
+        print(f"  {source.key:<20} {source.name:<25} {mark}")
+        if avail:
+            available_keys.append(source.key)
+
+    # Parse sessions to discover projects
+    all_sessions = []
+    source_names = {}
+    for SourceClass in ALL_SOURCES:
+        source = SourceClass()
+        if not source.available():
+            continue
+        sessions = source.parse_all(cutoff)
+        all_sessions.extend(sessions)
+        source_names[source.key] = source.name
+
+    projects = defaultdict(lambda: {"sessions": 0, "sources": set()})
+    for s in all_sessions:
+        name = s.project or "(no project)"
+        projects[name]["sessions"] += 1
+        projects[name]["sources"].add(s.source)
+
+    print(f"\nProjects ({len(projects)}):")
+    print(f"  {'Project':<40} {'Sessions':>10} {'Sources'}")
+    print(f"  {'-'*75}")
+    for name, info in sorted(projects.items(), key=lambda x: x[1]["sessions"], reverse=True):
+        srcs = ", ".join(sorted(info["sources"]))
+        display = name if len(name) <= 38 else name[:35] + "..."
+        print(f"  {display:<40} {info['sessions']:>10,} {srcs}")
+
+    print("\nUse --source KEY and --project NAME to filter.\n")
+
+
 def main():
-    cutoff = get_cutoff()
+    args = parse_args()
+    cutoff = get_cutoff(since_days=args.days, since_date=args.since)
+
+    if args.list:
+        list_sources_and_projects(cutoff)
+        return
+
+    source_filter = set(args.source) if args.source else None
+
     all_sessions = []
     source_names = {}
 
     for SourceClass in ALL_SOURCES:
         source = SourceClass()
+
+        # Skip sources not in filter
+        if source_filter and source.key not in source_filter:
+            continue
+
         if not source.available():
             print(f"  {source.name}: not found, skipping")
             continue
@@ -35,6 +135,9 @@ def main():
         print(f"  {len(sessions)} sessions")
         all_sessions.extend(sessions)
         source_names[source.key] = source.name
+
+    # Apply project filter
+    all_sessions = filter_sessions(all_sessions, projects=args.project)
 
     if not all_sessions:
         print("No sessions found.")

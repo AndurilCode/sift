@@ -7,23 +7,18 @@ operate exclusively on this schema, making it trivial to add new sources.
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 
-SINCE_DAYS = int(os.environ.get("SINCE_DAYS", "0")) or None
-SINCE_DATE = os.environ.get("SINCE_DATE")
-
-
-def get_cutoff() -> Optional[datetime]:
+def get_cutoff(*, since_days: Optional[int] = None, since_date: Optional[str] = None) -> Optional[datetime]:
     """Return a UTC-aware datetime cutoff, or None for all time."""
-    if SINCE_DATE:
-        return datetime.fromisoformat(SINCE_DATE).replace(tzinfo=timezone.utc)
-    if SINCE_DAYS:
-        return datetime.now(timezone.utc) - timedelta(days=SINCE_DAYS)
+    if since_date:
+        return datetime.fromisoformat(since_date).replace(tzinfo=timezone.utc)
+    if since_days:
+        return datetime.now(timezone.utc) - timedelta(days=since_days)
     return None
 
 

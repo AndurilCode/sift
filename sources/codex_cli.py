@@ -20,8 +20,13 @@ from typing import Optional
 from .base import BaseSource, NormalizedSession, TokenUsage
 
 CODEX_DIR = Path.home() / ".codex"
-STATE_DB = CODEX_DIR / "state_5.sqlite"
 HISTORY_FILE = CODEX_DIR / "history.jsonl"
+
+
+def _find_state_db() -> Optional[Path]:
+    """Find the latest Codex state DB (schema version may vary)."""
+    candidates = sorted(CODEX_DIR.glob("state_*.sqlite"), reverse=True)
+    return candidates[0] if candidates else None
 
 EXPLORATION_TOOLS = {"exec_command", "write_stdin", "request_user_input"}
 PRODUCTION_TOOLS = {"apply_patch"}
@@ -127,11 +132,14 @@ class CodexCLISource(BaseSource):
         return "codex-cli"
 
     def available(self) -> bool:
-        return STATE_DB.exists()
+        return _find_state_db() is not None
 
     def parse_all(self, cutoff: Optional[datetime] = None) -> list[NormalizedSession]:
+        state_db = _find_state_db()
+        if not state_db:
+            return []
         try:
-            db = sqlite3.connect(str(STATE_DB))
+            db = sqlite3.connect(str(state_db))
         except Exception:
             return []
 

@@ -1,0 +1,70 @@
+# AI Coding Assistant Usage Analyzer
+
+Cross-platform usage analytics for AI coding tools. Parses local session data, computes 27 metrics, and generates reports, an interactive dashboard, and a machine-readable JSON export.
+
+## Supported Sources
+
+| Source | Data Location |
+|--------|--------------|
+| Claude Code | `~/.claude/projects/` |
+| Copilot CLI | `~/.copilot/session-state/` |
+| VS Code Copilot Chat | `~/Library/Application Support/Code/User/workspaceStorage/` |
+| Cursor | `~/.cursor/chats/` + `~/.cursor/ai-tracking/` |
+| Gemini CLI | `~/.gemini/tmp/` |
+| Codex CLI | `~/.codex/state_*.sqlite` |
+
+## Usage
+
+```bash
+# All time, all sources
+python3 main.py
+
+# Last 7 days
+python3 main.py --days 7
+
+# Since a specific date
+python3 main.py --since 2026-03-01
+
+# Filter by source
+python3 main.py --source claude-code
+python3 main.py --source claude-code --source copilot-cli
+
+# Filter by project (substring, case-insensitive)
+python3 main.py --project my-repo
+
+# Combine filters
+python3 main.py --days 30 --source claude-code --project my-repo
+
+# List available sources and projects
+python3 main.py --list
+python3 main.py --list --days 30
+```
+
+## Output
+
+All artifacts are written to `~/tuin/analysis/tokens/`:
+
+| File | Description |
+|------|-------------|
+| `report.md` | Full markdown report with all metric sections |
+| `dashboard.html` | Interactive HTML dashboard with filters and charts |
+| `export.json` | Machine-readable JSON with all metrics and per-session data |
+| `prompts/` | User prompts grouped by project |
+
+## Metrics
+
+| Category | Metrics |
+|----------|---------|
+| Cost | Total cost, cost/session, cost/action, cost/minute, daily burn, platform comparison |
+| Cache & Context | Cache hit rate, amortization, input freshness, context accumulation, tool definition overhead |
+| Output | Output ratio (net/gross), stop reason distribution, model mix |
+| Productivity | Edit/read ratio, turns before first write, lines ratio, prompt length distribution |
+| Health | Session health (median/P90/bloat), session outcome (success/failure), retry ratio, duration trend |
+| Adoption | Project adoption, top sessions, model routing efficiency |
+
+## Requirements
+
+- Python 3.10+
+- `pyyaml` (for Copilot CLI parsing)
+
+No other dependencies. The dashboard uses Chart.js via CDN.

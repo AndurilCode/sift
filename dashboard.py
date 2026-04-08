@@ -1,0 +1,515 @@
+"""
+Generate a self-contained HTML dashboard from NormalizedSession data.
+All metrics computed client-side from per-session data, enabling interactive filters.
+Design: Cursor editor aesthetic + engineering metrics UX best practices.
+"""
+
+from __future__ import annotations
+import json
+from pathlib import Path
+from datetime import datetime
+
+from sources.base import NormalizedSession
+from metrics import estimate_cost, session_cost
+
+OUTPUT_DIR = Path.home() / "tuin" / "analysis" / "tokens"
+
+
+def _build_data(sessions: list[NormalizedSession], source_names: dict) -> dict:
+    """Build per-session data for client-side filtering + aggregation."""
+    rows = []
+    for s in sessions:
+        cost = session_cost(s)
+        child_cost = sum(estimate_cost(c.usage, c.model) for c in s.children)
+        compaction_children = sum(1 for c in s.children if "acompact" in c.extras.get("subagent_file", ""))
+        tc = s.tool_calls
+
+        # Include children's tokens so JS totals match Python's flatten_with_children
+        child_input = sum(c.usage.input_tokens for c in s.children)
+        child_output = sum(c.usage.output_tokens for c in s.children)
+        child_cache_read = sum(c.usage.cache_read_tokens for c in s.children)
+        child_cache_write = sum(c.usage.cache_write_tokens for c in s.children)
+        child_tokens = sum(c.total_tokens for c in s.children)
+
+        rows.append({
+            "id": s.session_id[:12],
+            "source": s.source,
+            "source_name": source_names.get(s.source, s.source),
+            "project": s.project,
+            "date": s.date,
+            "model": s.model or "unknown",
+            "cost": round(cost, 4),
+            "tokens": s.total_tokens + child_tokens,
+            "input": s.usage.input_tokens + child_input,
+            "output": s.usage.output_tokens + child_output,
+            "parent_output": s.usage.output_tokens,
+            "cache_read": s.usage.cache_read_tokens + child_cache_read,
+            "cache_write": s.usage.cache_write_tokens + child_cache_write,
+            "tool_calls": s.total_tool_calls,
+            "edits": tc.get("Edit", 0) + tc.get("edit", 0) + tc.get("replace_string_in_file", 0) + tc.get("multi_replace_string_in_file", 0) + tc.get("replace", 0) + tc.get("apply_patch", 0),
+            "writes": tc.get("Write", 0) + tc.get("create", 0) + tc.get("create_file", 0) + tc.get("write_file", 0),
+            "reads": tc.get("Read", 0) + tc.get("view", 0) + tc.get("read_file", 0) + tc.get("read_many_files", 0),
+            "msgs": s.assistant_messages,
+            "turns": s.turns,
+            "dur": s.duration_seconds or 0,
+            "children": len(s.children),
+            "child_cost": round(child_cost, 4),
+            "compactions": compaction_children,
+            "tbfw": s.extras.get("turns_before_first_write"),
+            "premium": s.extras.get("premium_requests", 0),
+            "tool_overhead": s.extras.get("context_info", {}).get("tool_definitions_tokens", 0),
+            "ctx_tokens": s.extras.get("context_info", {}).get("current_tokens", 0),
+            "stop_reasons": s.extras.get("stop_reasons", {}),
+            "tools": dict(s.tool_calls),
+            "lines_read": s.extras.get("lines_read", 0),
+            "lines_gen": s.extras.get("lines_generated", 0) or s.extras.get("lines_added", 0),
+        })
+
+    return {
+        "generated": datetime.now().isoformat(),
+        "source_names": source_names,
+        "sessions": rows,
+    }
+
+
+_HTML = (
+    r"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Coding Assistant Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{
+  --bg:#181818;--surface:#232323;--elevated:#2a2a2a;--hover:#333;
+  --text:#e4e4e4;--text2:#888;--text3:#666;
+  --border:#333;--border2:#2a2a2a;
+  --accent:#7c5aed;--accent-dim:rgba(124,90,237,.12);
+  --blue:#60a5fa;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--pink:#ec4899;--teal:#14b8a6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.5 system-ui,-apple-system,sans-serif;padding:24px 32px}
+::selection{background:var(--accent-dim)}
+
+/* Header */
+.header{margin-bottom:24px}
+.header h1{font-size:16px;font-weight:600;color:var(--text);margin-bottom:2px}
+.header p{font-size:12px;color:var(--text2)}
+
+/* Filters - sticky top bar */
+.filter-bar{position:sticky;top:0;z-index:10;background:var(--bg);padding:12px 0 16px;border-bottom:1px solid var(--border2);margin-bottom:24px;display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.filter-bar .fg{display:flex;flex-direction:column;gap:3px}
+.filter-bar label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.filter-bar select,.filter-bar input[type=date]{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;min-width:150px;outline:none}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--accent)}
+.filter-bar .btns{display:flex;gap:6px;padding-top:17px}
+.btn{border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity .15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.85}
+.btn-ghost{background:var(--elevated);color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{background:var(--hover)}
+.pills{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pill{font-size:11px;background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:9999px;display:flex;align-items:center;gap:4px}
+.pill button{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0}
+
+/* Grid */
+.grid{display:grid;gap:12px;margin-bottom:20px}
+.g-kpi{grid-template-columns:repeat(auto-fill,minmax(165px,1fr))}
+.g4{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.g3{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.g2{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}
+
+/* Cards */
+.card{background:var(--surface);border-radius:8px;padding:16px 20px}
+.card-sm{padding:12px 14px}
+.card h3{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px}
+.stat{font-size:20px;font-weight:700;font-family:system-ui,sans-serif;letter-spacing:-.02em}
+.stat-sm{font-size:11px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-green{color:var(--green)}.stat-yellow{color:var(--yellow)}.stat-red{color:var(--red)}.stat-accent{color:var(--accent)}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.card-hdr h3{margin-bottom:0}
+.info-btn{width:16px;height:16px;border-radius:9999px;border:1px solid var(--border);background:none;color:var(--text3);font-size:10px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;font-style:italic;font-family:Georgia,serif;line-height:1}
+.info-btn:hover{border-color:var(--accent);color:var(--accent)}
+.tooltip{display:none;position:absolute;top:22px;width:260px;background:var(--elevated);border:1px solid var(--border);border-radius:8px;padding:12px;font:normal 12px/1.6 system-ui,-apple-system,sans-serif;color:var(--text2);z-index:20;box-shadow:0 4px 16px rgba(0,0,0,.4);text-align:left;letter-spacing:0;text-transform:none}
+.info-btn:hover .tooltip{display:block}
+.tooltip .tt-title{font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text);font-style:normal}
+.tooltip .tt-good{color:var(--green);font-size:10px;margin-top:4px}.tooltip .tt-bad{color:var(--red);font-size:10px;margin-top:2px}
+
+/* Sections */
+.section{margin-bottom:28px}
+.section-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:8px 0;border-bottom:1px solid var(--border2);margin-bottom:16px;user-select:none}
+.section-hdr h2{font-size:13px;font-weight:600;color:var(--text)}
+.section-hdr .chevron{font-size:11px;color:var(--text3);transition:transform .2s}
+.section-hdr.collapsed .chevron{transform:rotate(-90deg)}
+.section-body{overflow:hidden;transition:max-height .3s ease}
+.section-body.hidden{max-height:0!important;overflow:hidden}
+
+/* Gauge */
+.gauge{position:relative;width:100%;max-width:140px;margin:0 auto}
+.gauge-label{text-align:center;font-size:11px;color:var(--text3);margin-top:4px}
+
+/* Charts */
+.cc{position:relative;height:260px}.cl{position:relative;height:320px}
+.cc-tall{position:relative;height:320px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--text3);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:6px 10px;border-bottom:1px solid var(--border)}
+td{padding:6px 10px;border-bottom:1px solid var(--border2);color:var(--text)}
+tr:hover td{background:var(--elevated)}
+.table-scroll{max-height:400px;overflow-y:auto}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;padding:1px 8px;border-radius:9999px;font-size:11px;font-weight:500;background:var(--accent-dim);color:var(--accent)}
+
+@media(max-width:768px){body{padding:16px}.g2,.g3,.g4,.g5{grid-template-columns:1fr}.filter-bar{flex-direction:column}}
+</style></head><body>
+
+<div class="header">
+  <h1>AI Coding Assistant Dashboard</h1>
+  <p id="sub"></p>
+</div>
+
+<div class="filter-bar" id="filters">
+  <div class="fg"><label>Platform</label><select id="f-plat"><option value="">All platforms</option></select></div>
+  <div class="fg"><label>Project</label><select id="f-proj"><option value="">All projects</option></select></div>
+  <div class="fg"><label>From</label><input type="date" id="f-from"></div>
+  <div class="fg"><label>To</label><input type="date" id="f-to"></div>
+  <div class="btns">
+    <button class="btn btn-primary" onclick="go()">Apply</button>
+    <button class="btn btn-ghost" onclick="rst()">Reset</button>
+    <button class="btn btn-ghost" onclick="setRange(7)">7d</button>
+    <button class="btn btn-ghost" onclick="setRange(30)">30d</button>
+    <button class="btn btn-ghost" onclick="setRange(90)">90d</button>
+  </div>
+  <div class="pills" id="pills"></div>
+</div>
+
+<!-- KPIs -->
+<div class="grid g-kpi" id="kpis"></div>
+
+<!-- Primary: Daily Burn -->
+<div class="section" id="s-burn">
+  <div class="section-hdr" onclick="toggle('s-burn')"><h2>Spend Over Time</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body"><div class="card" data-info="burn"><h3>Daily Spend</h3><div class="cl"><canvas id="c-burn"></canvas></div></div></div>
+</div>
+
+<!-- Gauges -->
+<div class="section" id="s-eff">
+  <div class="section-hdr" onclick="toggle('s-eff')"><h2>Efficiency Gauges</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body"><div class="grid g3" id="gauges"></div></div>
+</div>
+
+<!-- Breakdowns -->
+<div class="section" id="s-break">
+  <div class="section-hdr" onclick="toggle('s-break')"><h2>Breakdowns</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body">
+    <div class="grid g2">
+      <div class="card" data-info="plat"><h3>Cost by Platform</h3><div class="cc"><canvas id="c-plat"></canvas></div></div>
+      <div class="card" data-info="model"><h3>Cost by Model</h3><div class="cc"><canvas id="c-model"></canvas></div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card" data-info="tools"><h3>Top Tools</h3><div class="cc-tall"><canvas id="c-tools"></canvas></div></div>
+      <div class="card" data-info="projects"><h3>Top Projects</h3><div class="cc-tall"><canvas id="c-proj"></canvas></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Context -->
+<div class="section" id="s-ctx">
+  <div class="section-hdr" onclick="toggle('s-ctx')"><h2>Context Efficiency</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body">
+    <div class="grid g2">
+      <div class="card" data-info="stop"><h3>Stop Reasons</h3><div class="cc"><canvas id="c-stop"></canvas></div></div>
+      <div class="card" data-info="erw"><h3>Productivity: Edit / Read / Write</h3><div class="cc"><canvas id="c-erw"></canvas></div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card" data-info="health"><h3>Session Size Distribution</h3><div class="cc"><canvas id="c-health"></canvas></div></div>
+      <div class="card" id="tbfw-card" data-info="tbfw"><h3>Turns Before First Write</h3><div class="cc"><canvas id="c-tbfw"></canvas></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tables -->
+<div class="section" id="s-tables">
+  <div class="section-hdr" onclick="toggle('s-tables')"><h2>Details</h2><span class="chevron">&#9660;</span></div>
+  <div class="section-body">
+    <div class="grid g2">
+      <div class="card" data-info="platTable"><h3>Platform Comparison</h3><div><table id="t1"></table></div></div>
+      <div class="card" data-info="sessTable"><h3>Most Costly Sessions</h3><div class="table-scroll"><table id="t2"></table></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const RAW=%%DATA_JSON%%;
+const ALL=RAW.sessions,SN=RAW.source_names;
+let F=ALL;const CH={};
+const P=['#7c5aed','#60a5fa','#22c55e','#f59e0b','#f97316','#ef4444','#ec4899','#14b8a6','#84cc16','#06b6d4'];
+const fmt={
+  usd:n=>'$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}),
+  tok:n=>Math.round(n).toLocaleString(),
+  pct:n=>(n*100).toFixed(1)+'%',
+  pct0:n=>Math.round(n*100)+'%'
+};
+function sum(a,f){return a.reduce((s,x)=>s+(typeof f==='function'?f(x):x[f]||0),0)}
+function med(a){const s=[...a].sort((a,b)=>a-b);return s.length?s[s.length>>1]:0}
+function grp(a,k){const m={};a.forEach(x=>{const v=typeof k==='function'?k(x):x[k];(m[v]=m[v]||[]).push(x)});return m}
+
+// ── Filters ──
+function initF(){
+  const pf=document.getElementById('f-plat'),pr=document.getElementById('f-proj');
+  pf.innerHTML='<option value="">All platforms</option>';
+  new Set(ALL.map(s=>s.source)).forEach(p=>pf.innerHTML+=`<option value="${p}">${SN[p]||p}</option>`);
+  pr.innerHTML='<option value="">All projects</option>';
+  [...new Set(ALL.map(s=>s.project))].sort().forEach(p=>pr.innerHTML+=`<option value="${p}">${p.length>45?p.slice(0,45)+'...':p}</option>`);
+  const d=ALL.map(s=>s.date).filter(Boolean).sort();
+  if(d.length){document.getElementById('f-from').value=d[0];document.getElementById('f-to').value=d[d.length-1]}
+}
+function go(){
+  const pl=document.getElementById('f-plat').value,pj=document.getElementById('f-proj').value,
+        fr=document.getElementById('f-from').value,to=document.getElementById('f-to').value;
+  F=ALL.filter(s=>{
+    if(pl&&s.source!==pl)return false;
+    if(pj&&s.project!==pj)return false;
+    if(fr&&(!s.date||s.date<fr))return false;
+    if(to&&(!s.date||s.date>to))return false;
+    return true;
+  });
+  showPills();render();
+}
+function rst(){document.getElementById('f-plat').value='';document.getElementById('f-proj').value='';initF();F=ALL;showPills();render()}
+function setRange(days){
+  const to=new Date(),fr=new Date();fr.setDate(fr.getDate()-days);
+  document.getElementById('f-from').value=fr.toISOString().slice(0,10);
+  document.getElementById('f-to').value=to.toISOString().slice(0,10);
+  go();
+}
+function showPills(){
+  const el=document.getElementById('pills');el.innerHTML='';
+  const pl=document.getElementById('f-plat').value,pj=document.getElementById('f-proj').value,
+        fr=document.getElementById('f-from').value,to=document.getElementById('f-to').value;
+  const allDates=ALL.map(s=>s.date).filter(Boolean).sort();
+  const minD=allDates[0]||'',maxD=allDates[allDates.length-1]||'';
+  if(pl)el.innerHTML+=`<span class="pill">${SN[pl]||pl}<button onclick="document.getElementById('f-plat').value='';go()">&#10005;</button></span>`;
+  if(pj)el.innerHTML+=`<span class="pill">${pj.length>30?pj.slice(0,30)+'...':pj}<button onclick="document.getElementById('f-proj').value='';go()">&#10005;</button></span>`;
+  if(fr&&fr!==minD)el.innerHTML+=`<span class="pill">From: ${fr}<button onclick="document.getElementById('f-from').value='${minD}';go()">&#10005;</button></span>`;
+  if(to&&to!==maxD)el.innerHTML+=`<span class="pill">To: ${to}<button onclick="document.getElementById('f-to').value='${maxD}';go()">&#10005;</button></span>`;
+  el.innerHTML+=`<span style="font-size:11px;color:var(--text3)">${F.length} sessions</span>`;
+}
+
+// ── Collapsible sections ──
+function toggle(id){
+  const s=document.getElementById(id),h=s.querySelector('.section-hdr'),b=s.querySelector('.section-body');
+  h.classList.toggle('collapsed');b.classList.toggle('hidden');
+}
+
+// ── Chart helpers ──
+function mc(id,cfg){if(CH[id])CH[id].destroy();CH[id]=new Chart(document.getElementById(id),cfg)}
+function dg(parent,id,value,max,color,label,sublabel){
+  const el=document.createElement('div');el.className='card card-sm';
+  el.innerHTML=`<div class="gauge"><canvas id="${id}"></canvas></div><div class="gauge-label">${sublabel}</div>`;
+  parent.appendChild(el);
+  const p=Math.min(value/max,1);
+  mc(id,{type:'doughnut',data:{datasets:[{data:[p*100,100-p*100],backgroundColor:[color,'rgba(255,255,255,.04)'],borderWidth:0,circumference:270,rotation:225}]},
+  options:{cutout:'75%',responsive:true,plugins:{legend:{display:false},tooltip:{enabled:false}}},
+  plugins:[{id:'t',afterDraw(c){const{ctx:x,width:w,height:h}=c;x.save();x.textAlign='center';x.fillStyle='#e4e4e4';x.font='bold 18px system-ui,sans-serif';x.fillText(label,w/2,h/2+6);x.restore()}}]});
+}
+
+// ── KPI card with threshold coloring + info tooltip ──
+function kpi(parent,label,value,sub,color,info){
+  const d=document.createElement('div');d.className='card card-sm';
+  const cls=color?` stat-${color}`:'';
+  const tip=info?`<button class="info-btn" onmouseenter="positionTip(this)">i<div class="tooltip"><div class="tt-title">${info.title||label}</div>${info.desc||''}<div class="tt-good">\u2713 Good: ${info.good||''}</div><div class="tt-bad">\u2717 Bad: ${info.bad||''}</div></div></button>`:'';
+  d.innerHTML=`<div class="card-hdr"><h3>${label}</h3>${tip}</div><div class="stat${cls}">${value}</div><div class="stat-sm">${sub}</div>`;
+  parent.appendChild(d);
+}
+function positionTip(btn){
+  const tip=btn.querySelector('.tooltip');if(!tip)return;
+  const r=btn.getBoundingClientRect();
+  // If button is in the left half of viewport, open tooltip to the right
+  if(r.left<window.innerWidth/2){tip.style.left='0';tip.style.right='auto'}
+  else{tip.style.right='0';tip.style.left='auto'}
+}
+
+// ── Render ──
+function render(){
+  const n=F.length,tc=sum(F,'cost'),to=sum(F,'output'),tpo=sum(F,'parent_output'),ti=sum(F,'input'),cr=sum(F,'cache_read'),cw=sum(F,'cache_write'),
+    tt=sum(F,'tokens'),ttc=sum(F,'tool_calls'),te=sum(F,'edits'),tw=sum(F,'writes'),tr=sum(F,'reads'),
+    tm=sum(F,'msgs'),tcc=sum(F,'child_cost'),tcmp=sum(F,'compactions'),
+    prod=te+tw,ai=ti+cr+cw,chr=cr/Math.max(ai,1),
+    freshInput=ti+to+cw,or_net=to/Math.max(freshInput,1),or_gross=to/Math.max(tt,1),
+    fr=ti/Math.max(ti+cr,1),ca=cr/Math.max(cw,1),
+    tos=F.filter(s=>s.tool_overhead>0),tov=sum(tos,'tool_overhead')/Math.max(sum(tos,'ctx_tokens'),1),
+    ds=F.filter(s=>s.dur>0),
+    tbfw=F.map(s=>s.tbfw).filter(v=>v!=null),nw=F.filter(s=>s.tbfw==null&&s.tool_calls>0).length,
+    tka=F.map(s=>s.tokens).filter(t=>t>0),mk=med(tka),
+    sr={};F.forEach(s=>{for(const[k,v]of Object.entries(s.stop_reasons||{}))sr[k]=(sr[k]||0)+v});
+    const srt=Object.values(sr).reduce((a,b)=>a+b,0),
+    tls={};F.forEach(s=>{for(const[k,v]of Object.entries(s.tools||{}))tls[k]=(tls[k]||0)+v});
+
+  document.getElementById('sub').textContent=`${n.toLocaleString()} of ${ALL.length.toLocaleString()} sessions \u00b7 ${Object.keys(SN).length} sources \u00b7 Generated ${new Date(RAW.generated).toLocaleString()}`;
+
+  // ── KPIs ──
+  const kg=document.getElementById('kpis');kg.innerHTML='';
+  const cps=tc/Math.max(n,1);
+  kpi(kg,'Total Cost',fmt.usd(tc),`${fmt.usd(cps)}/session`,null,
+    {desc:'Total estimated spend across all AI coding tools based on per-model token pricing.',good:'Trending down or stable',bad:'Unexpected spikes or sustained growth'});
+  kpi(kg,'Sessions',n.toLocaleString(),`${Object.keys(grp(F,'project')).length} projects`,null,
+    {desc:'Number of AI assistant sessions. More sessions = more adoption, but watch cost per session.',good:'Growing adoption with stable cost/session',bad:'High session count with no productivity gain'});
+  kpi(kg,'Output Ratio',fmt.pct(or_net),`${fmt.tok(tpo)} output tokens \u00b7 Gross: ${fmt.pct(or_gross)}`,or_net<0.01?'red':or_net<0.03?'yellow':'green',
+    {desc:'Output tokens vs fresh input (excluding cache reads). Net ratio shows how much new output is generated per unit of new input. Gross includes cache replays.',good:'Net above 2% for coding tasks',bad:'Net below 1% means heavy context overhead even after caching'});
+  kpi(kg,'Cache Hit Rate',fmt.pct(chr),`Saving ${fmt.usd(cr/1e6*2.7)}`,chr>.7?'green':chr>.4?'yellow':'red',
+    {desc:'Fraction of input tokens served from cache (10x cheaper than uncached). Measures how well prompts reuse prior context.',good:'Above 70% \u2014 stable prompt prefixes',bad:'Below 40% \u2014 prompts changing too much between turns'});
+  kpi(kg,'Input Freshness',fmt.pct(fr),fr<.1?'Stable prompts':'High \u2014 poor reuse',fr<.1?'green':fr<.3?'yellow':'red',
+    {desc:'Fraction of input that is uncached (new). Lower means prompts are stable and cache is effective.',good:'Below 10% by turn 20',bad:'Above 30% means prompt structure keeps changing'});
+  kpi(kg,'Cache Amortization',ca.toFixed(1)+'x',ca>1?'Net positive':'Net negative',ca>5?'green':ca>1?'yellow':'red',
+    {desc:'How many times each cache write is reused. Cache writes cost 25% more than regular input, so you need at least 1 read per write to break even.',good:'Above 5x \u2014 excellent ROI on caching',bad:'Below 1x \u2014 paying more for cache writes than you save'});
+  kpi(kg,'Cost/Action',fmt.usd(tc/Math.max(prod,1)),`${prod.toLocaleString()} Edit+Write`,null,
+    {desc:'Cost per code-modifying action (Edit + Write). The real price of each code change the AI makes.',good:'Decreasing over time',bad:'Rising means more context overhead per productive action'});
+  const costMin=ds.length?sum(ds,'cost')/Math.max(sum(ds,'dur')/60,.01):0;
+  kpi(kg,'Cost/Minute',fmt.usd(costMin),`${ds.length} sessions w/ duration`,null,
+    {desc:'Time-normalized spend. Reveals if long sessions are cost-efficient or wasteful.',good:'Stable or decreasing',bad:'High and rising \u2014 sessions accumulating expensive context'});
+  kpi(kg,'Context Growth',fmt.tok(tt/Math.max(tm,1))+'/msg',`Median: ${fmt.tok(med(F.filter(s=>s.msgs>0).map(s=>s.tokens/s.msgs)))}/msg`,null,
+    {desc:'Average tokens consumed per assistant turn. Each turn replays the full conversation, so this grows as sessions get longer.',good:'Below 100K tokens/msg',bad:'Above 500K \u2014 sessions are accumulating too much context per turn'});
+  kpi(kg,'Bloat Index',(Math.max(...tka,0)/Math.max(mk,1)).toFixed(0)+'x',`${tka.filter(t=>t>5e7).length} over 50M`,Math.max(...tka,0)/Math.max(mk,1)>100?'red':'yellow',
+    {desc:'Ratio of the most expensive session to the median. High values mean a few sessions dominate cost.',good:'Below 50x \u2014 consistent session sizes',bad:'Above 200x \u2014 runaway sessions distort spend'});
+  kpi(kg,'Subagent Overhead',fmt.pct(tcc/Math.max(tc,.01)),`${fmt.pct(tcmp/Math.max(F.filter(s=>s.source==='claude-code').length,1))} compaction`,null,
+    {desc:'Percentage of total cost from spawned subagents. Each subagent duplicates base context. Compaction agents fire when sessions blow the context window.',good:'Below 10% with low compaction',bad:'Above 20% \u2014 consider CLAUDE_CODE_SUBAGENT_MODEL=haiku'});
+  if(tos.length)kpi(kg,'Tool Def Overhead',fmt.pct(tov),`${tos.length} sessions`,tov>.3?'red':tov>.15?'yellow':'green',
+    {desc:'Fraction of the context window consumed by tool/function schemas alone, before any messages. Measured from Copilot CLI shutdown data.',good:'Below 15%',bad:'Above 30% \u2014 too many tools registered, eating context'});
+  if(tbfw.length)kpi(kg,'Turns Before Write',(sum(tbfw,v=>v)/tbfw.length).toFixed(1),`Median: ${med(tbfw)} \u00b7 Never: ${nw}`,'accent',
+    {desc:'How many exploration tool calls (Read, Bash, Grep) happen before the first production action (Edit, Write). Measures ramp-up time.',good:'Below 10 for focused tasks',bad:'Above 25 \u2014 prompts may be too vague, causing excessive exploration'});
+  const tlr=sum(F,'lines_read'),tlg=sum(F,'lines_gen'),lrSessions=F.filter(s=>s.lines_read>0||s.lines_gen>0).length;
+  if(lrSessions>0)kpi(kg,'Lines Read/Generated',tlg>0?(tlr/tlg).toFixed(1)+'x':'\u221e',`${tlr.toLocaleString()} read \u00b7 ${tlg.toLocaleString()} generated`,null,
+    {desc:'Ratio of lines read from files vs net lines generated (Write + Edit delta). Shows how much context the AI consumes per line of output.',good:'Below 3x \u2014 focused, efficient generation',bad:'Above 10x \u2014 excessive reading relative to output'});
+
+  // ── Gauges ──
+  const gg=document.getElementById('gauges');gg.innerHTML='';
+  dg(gg,'g1',or_net,.1,'#7c5aed',fmt.pct(or_net),'Output Ratio (net)');
+  dg(gg,'g2',chr,1,'#22c55e',fmt.pct(chr),'Cache Hit Rate');
+  dg(gg,'g3',1-fr,1,fr<.1?'#22c55e':'#f59e0b',fmt.pct(fr),'Input Freshness');
+  if(tos.length)dg(gg,'g4',tov,1,tov>.3?'#ef4444':'#22c55e',fmt.pct(tov),'Tool Def Overhead');
+  if(prod+tr>0)dg(gg,'g5',Math.min(prod/Math.max(tr,1),3),3,'#60a5fa',(prod/Math.max(tr,1)).toFixed(2),'Edit/Read Ratio');
+
+  // ── Burn chart (area) ──
+  // Fill missing dates — only between first and last active day (skip long inactive tails)
+  const bd=grp(F,'date'),rawDates=Object.keys(bd).filter(Boolean).sort();
+  let bk=[];
+  if(rawDates.length>=2){
+    // Find first and last dates that actually have spend
+    const activeDates=rawDates.filter(d=>sum(bd[d],'cost')>0);
+    if(activeDates.length>=2){
+      const d0=new Date(activeDates[0]+'T00:00:00'),d1=new Date(activeDates[activeDates.length-1]+'T00:00:00');
+      for(let d=new Date(d0);d<=d1;d.setDate(d.getDate()+1)){bk.push(d.toISOString().slice(0,10))}
+    } else {bk=rawDates}
+  } else {bk=rawDates}
+  const bc=bk.map(d=>bd[d]?sum(bd[d],'cost'):0),
+    ba=bk.map((_,i)=>{const start=Math.max(0,i-6);const w=bc.slice(start,i+1);return w.reduce((a,b)=>a+b,0)/w.length});
+  mc('c-burn',{type:'line',data:{labels:bk,datasets:[
+    {label:'Daily Cost',data:bc,fill:true,backgroundColor:'rgba(124,90,237,.15)',borderColor:'#7c5aed',borderWidth:1.5,pointRadius:0,tension:.3},
+    {label:'7d Avg',data:ba,borderColor:'#f59e0b',borderWidth:2,borderDash:[6,3],pointRadius:0,tension:.3},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
+    scales:{x:{ticks:{color:'#666',font:{size:10},maxRotation:45,autoSkip:true,maxTicksLimit:20},grid:{color:'rgba(255,255,255,.03)'}},y:{ticks:{color:'#666',font:{size:11},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,.04)'}}},
+    plugins:{legend:{labels:{color:'#888',font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt.usd(ctx.raw)}}}}});
+
+  // ── Platform donut ──
+  const bp=grp(F,'source_name'),pn=Object.keys(bp);
+  mc('c-plat',{type:'doughnut',data:{labels:pn,datasets:[{data:pn.map(k=>sum(bp[k],'cost')),backgroundColor:P.slice(0,pn.length),borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{color:'#888',padding:8,font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmt.usd(ctx.raw)}`}}}}});
+
+  // ── Model donut ──
+  const bm=Object.entries(grp(F,'model')).map(([k,v])=>({n:k,c:sum(v,'cost')})).sort((a,b)=>b.c-a.c).slice(0,8);
+  mc('c-model',{type:'doughnut',data:{labels:bm.map(x=>x.n),datasets:[{data:bm.map(x=>x.c),backgroundColor:P.slice(0,bm.length),borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{color:'#888',padding:8,font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmt.usd(ctx.raw)}`}}}}});
+
+  // ── Tools bar ──
+  const ts2=Object.entries(tls).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  if(ts2.length)mc('c-tools',{type:'bar',data:{labels:ts2.map(t=>t[0]),datasets:[{data:ts2.map(t=>t[1]),backgroundColor:'rgba(124,90,237,.4)',hoverBackgroundColor:'rgba(124,90,237,.6)',borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}},y:{ticks:{color:'#888',font:{size:11}},grid:{display:false}}},plugins:{legend:{display:false}}}});
+
+  // ── Projects bar ──
+  const pp=Object.entries(grp(F,'project')).map(([k,v])=>({n:k,c:sum(v,'cost')})).sort((a,b)=>b.c-a.c).slice(0,10);
+  mc('c-proj',{type:'bar',data:{labels:pp.map(x=>x.n.length>28?x.n.slice(0,28)+'...':x.n),datasets:[{data:pp.map(x=>x.c),backgroundColor:'rgba(34,197,94,.4)',hoverBackgroundColor:'rgba(34,197,94,.6)',borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#666',font:{size:11},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,.04)'}},y:{ticks:{color:'#888',font:{size:11}},grid:{display:false}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>fmt.usd(ctx.raw)}}}}});
+
+  // ── Stop reasons ──
+  const srK=Object.keys(sr);
+  if(srK.length)mc('c-stop',{type:'doughnut',data:{labels:srK,datasets:[{data:srK.map(k=>sr[k]),backgroundColor:P.slice(0,srK.length),borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'bottom',labels:{color:'#888',padding:8,font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${(ctx.raw/srt*100).toFixed(1)}%`}}}}});
+
+  // ── Edit/Read/Write ──
+  if(te||tw||tr)mc('c-erw',{type:'bar',data:{labels:['Edit','Write','Read'],datasets:[{data:[te,tw,tr],backgroundColor:['#7c5aed','#22c55e','#60a5fa'],borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#888',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},plugins:{legend:{display:false}}}});
+
+  // ── Session health histogram ──
+  const bkts=[{l:'<100K',x:1e5},{l:'100K-1M',x:1e6},{l:'1M-10M',x:1e7},{l:'10M-50M',x:5e7},{l:'50M+',x:Infinity}];
+  const hc=bkts.map(()=>0);F.forEach(s=>{for(let i=0;i<bkts.length;i++){if(s.tokens<=bkts[i].x){hc[i]++;break}}});
+  mc('c-health',{type:'bar',data:{labels:bkts.map(b=>b.l),datasets:[{data:hc,backgroundColor:['#22c55e','#60a5fa','#7c5aed','#f59e0b','#ef4444'],borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#888',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+' sessions'}}}}});
+
+  // ── Turns before first write histogram ──
+  const tbfwCard=document.getElementById('tbfw-card');
+  if(tbfw.length>0){
+    tbfwCard.style.display='';
+    const tb=[{l:'0',x:0},{l:'1-5',x:5},{l:'6-10',x:10},{l:'11-20',x:20},{l:'21-50',x:50},{l:'50+',x:Infinity}];
+    const tbc=tb.map(()=>0);tbfw.forEach(v=>{for(let i=0;i<tb.length;i++){if(v<=tb[i].x){tbc[i]++;break}}});
+    mc('c-tbfw',{type:'bar',data:{labels:tb.map(b=>b.l),datasets:[{data:tbc,backgroundColor:'rgba(124,90,237,.4)',hoverBackgroundColor:'rgba(124,90,237,.6)',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Exploration calls before first write',color:'#666',font:{size:11}},ticks:{color:'#888',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+' sessions'}}}}});
+  } else {tbfwCard.style.display='none'}
+
+  // ── Platform table ──
+  let ph='<thead><tr><th>Platform</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Avg</th><th class="num">Tools</th></tr></thead><tbody>';
+  for(const[k,v]of Object.entries(bp)){const c=sum(v,'cost');ph+=`<tr><td>${k}</td><td class="num">${v.length.toLocaleString()}</td><td class="num">${fmt.usd(c)}</td><td class="num">${fmt.usd(c/v.length)}</td><td class="num">${sum(v,'tool_calls').toLocaleString()}</td></tr>`}
+  if(tos.length)ph+=`<tr><td colspan="5" style="color:var(--text3);font-style:italic;font-size:11px">Tool def overhead: ${fmt.pct(tov)} of context window (${tos.length} sessions measured)</td></tr>`;
+  ph+='</tbody>';document.getElementById('t1').innerHTML=ph;
+
+  // ── Sessions table ──
+  const top=[...F].sort((a,b)=>b.cost-a.cost).slice(0,10);
+  let sh='<thead><tr><th>Project</th><th>Source</th><th class="num">Cost</th><th class="num">Tokens</th><th>Date</th></tr></thead><tbody>';
+  top.forEach(s=>{sh+=`<tr><td title="${s.project}">${s.project.length>25?s.project.slice(0,25)+'\u2026':s.project}</td><td><span class="badge">${s.source_name}</span></td><td class="num">${fmt.usd(s.cost)}</td><td class="num">${fmt.tok(s.tokens)}</td><td>${s.date}</td></tr>`});
+  sh+='</tbody>';document.getElementById('t2').innerHTML=sh;
+}
+
+// ── Card info tooltips ──
+const CARD_INFO={
+  burn:{title:'Daily Spend',desc:'Daily cost with 7-day rolling average. The area shows daily spend, the dashed line smooths out spikes. Days with $0 spend are included to show true gaps in usage.',good:'Stable or trending down',bad:'Sustained upward trend or unexpected spikes'},
+  plat:{title:'Cost by Platform',desc:'Estimated cost distribution across all AI coding tools. Cost is computed from token usage with per-model pricing. Helps identify which tool consumes the most budget.',good:'Spend concentrated on high-value tools',bad:'Expensive tools used for low-value tasks'},
+  model:{title:'Cost by Model',desc:'Cost breakdown by LLM model. Expensive models (Opus, GPT-5) should be used for complex tasks. Cheaper models (Haiku, GPT-5-mini) for exploration and simple actions.',good:'Expensive models <30% of total cost',bad:'Opus/GPT-5 used for >50% of sessions'},
+  tools:{title:'Top Tools',desc:'Most frequently called tools across all sessions. Bash and Read dominate exploration. Edit and Write are production actions. High Bash count may indicate debugging loops.',good:'Balanced mix of exploration and production tools',bad:'Excessive Bash calls with few Edits (stuck loops)'},
+  projects:{title:'Top Projects by Cost',desc:'Projects ranked by estimated cost. Helps identify which codebases consume the most AI budget and whether spend aligns with project priority.',good:'High-priority projects at the top',bad:'Low-priority or abandoned projects consuming budget'},
+  stop:{title:'Stop Reasons',desc:'Why the AI stopped generating. tool_use = called a tool (agentic flow). end_turn = finished naturally. max_tokens = output was truncated (wasted generation).',good:'Mostly tool_use (agentic) + end_turn (complete)',bad:'High max_tokens rate = truncated output, wasted spend'},
+  erw:{title:'Edit / Read / Write',desc:'Production actions (Edit + Write = code modifications) vs exploration (Read = understanding code). The ratio shows whether sessions are producing or just exploring.',good:'Edit+Write > Read (ratio > 1.0)',bad:'Heavy Read with few Edits = stuck in exploration'},
+  health:{title:'Session Size Distribution',desc:'Histogram of session token counts. Most sessions should be under 10M tokens. Sessions over 50M indicate runaway context accumulation \u2014 prime targets for /clear or splitting.',good:'Most sessions in <1M and 1-10M buckets',bad:'Many sessions in 50M+ bucket'},
+  tbfw:{title:'Turns Before First Write',desc:'How many exploration tool calls (Read, Bash, Grep) happen before the first production action (Edit, Write). Measures prompt specificity and ramp-up time.',good:'Median below 10 = focused prompts',bad:'Median above 25 = vague prompts causing excessive exploration'},
+  platTable:{title:'Platform Comparison',desc:'Side-by-side comparison of all AI coding tools. Shows sessions, total cost, average cost per session, and tool calls. The footer shows tool definition overhead if available.',good:'Cost per session stable across platforms',bad:'One platform disproportionately expensive'},
+  sessTable:{title:'Most Costly Sessions',desc:'Top sessions ranked by cost. These are your biggest optimization targets. Consider: was the cost justified by output? Could the session have been split earlier?',good:'Top sessions are complex, high-value tasks',bad:'Top sessions are simple tasks that ran too long'},
+};
+
+document.querySelectorAll('[data-info]').forEach(card=>{
+  const key=card.dataset.info,info=CARD_INFO[key];
+  if(!info)return;
+  const h3=card.querySelector('h3');
+  if(!h3)return;
+  const wrap=document.createElement('div');wrap.className='card-hdr';
+  const tip=document.createElement('button');tip.className='info-btn';
+  tip.setAttribute('onmouseenter','positionTip(this)');
+  tip.innerHTML=`i<div class="tooltip"><div class="tt-title">${info.title}</div>${info.desc}<div class="tt-good">\u2713 Good: ${info.good}</div><div class="tt-bad">\u2717 Bad: ${info.bad}</div></div>`;
+  h3.parentNode.insertBefore(wrap,h3);
+  wrap.appendChild(h3);wrap.appendChild(tip);
+});
+
+initF();render();
+</script></body></html>"""
+)
+
+
+def generate(sessions: list[NormalizedSession], source_names: dict, cutoff=None) -> Path:
+    """Generate HTML dashboard. Returns path."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    dashboard_path = OUTPUT_DIR / "dashboard.html"
+
+    data = _build_data(sessions, source_names)
+    data_json = json.dumps(data, default=str)
+    html = _HTML.replace("%%DATA_JSON%%", data_json)
+
+    with open(dashboard_path, "w") as f:
+        f.write(html)
+
+    print(f"Dashboard: {dashboard_path}")
+    return dashboard_path

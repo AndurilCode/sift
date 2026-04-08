@@ -18,27 +18,27 @@ Then use `/sift` in any conversation to analyze your AI usage.
 
 ```bash
 # All time, all sources
-python3 main.py
+python3 -m sift
 
 # Last 7 days
-python3 main.py --days 7
+python3 -m sift --days 7
 
 # Since a specific date
-python3 main.py --since 2026-03-01
+python3 -m sift --since 2026-03-01
 
 # Filter by source
-python3 main.py --source claude-code
-python3 main.py --source claude-code --source copilot-cli
+python3 -m sift --source claude-code
+python3 -m sift --source claude-code --source copilot-cli
 
 # Filter by project (substring, case-insensitive)
-python3 main.py --project my-repo
+python3 -m sift --project my-repo
 
 # Combine filters
-python3 main.py --days 30 --source claude-code --project my-repo
+python3 -m sift --days 30 --source claude-code --project my-repo
 
 # List available sources and projects
-python3 main.py --list
-python3 main.py --list --days 30
+python3 -m sift --list
+python3 -m sift --list --days 30
 ```
 
 ## Supported Sources

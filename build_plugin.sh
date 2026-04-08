@@ -13,13 +13,11 @@ echo "Building sift plugin..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/app"
 
-# Copy source modules into app package
-cp "$SCRIPT_DIR/main.py" "$BUILD_DIR/app/__main__.py"
-cp "$SCRIPT_DIR/report.py" "$BUILD_DIR/app/"
-cp "$SCRIPT_DIR/dashboard.py" "$BUILD_DIR/app/"
-cp "$SCRIPT_DIR/export_json.py" "$BUILD_DIR/app/"
-cp -r "$SCRIPT_DIR/sources" "$BUILD_DIR/app/"
-cp -r "$SCRIPT_DIR/metrics" "$BUILD_DIR/app/"
+# Copy the sift package
+cp -r "$SCRIPT_DIR/sift" "$BUILD_DIR/app/sift"
+
+# Entry point: python3 -m sift runs sift/__main__.py
+cp "$SCRIPT_DIR/sift/__main__.py" "$BUILD_DIR/app/__main__.py"
 
 # Create zipapp
 python3 -m zipapp "$BUILD_DIR/app" \

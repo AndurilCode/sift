@@ -63,6 +63,7 @@ def _build_data(sessions: list[NormalizedSession], source_names: dict) -> dict:
             "tools": dict(s.tool_calls),
             "lines_read": s.extras.get("lines_read", 0),
             "lines_gen": s.extras.get("lines_generated", 0) or s.extras.get("lines_added", 0),
+            "prompt_lengths": [len(p.get("text", "")) for p in s.prompts if isinstance(p.get("text", ""), str) and p.get("text", "").strip()],
         })
 
     return {
@@ -298,6 +299,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <div class="card" data-info="erw"><h3>Productivity: Edit / Read / Write</h3><div class="cc"><canvas id="c-erw"></canvas></div></div>
       <div class="card" data-info="health"><h3>Session Size Distribution</h3><div class="cc"><canvas id="c-health"></canvas></div></div>
       <div class="card" id="tbfw-card" data-info="tbfw"><h3>Turns Before First Write</h3><div class="cc"><canvas id="c-tbfw"></canvas></div></div>
+      <div class="card" id="pl-card" data-info="promptLen"><h3>Prompt Length Distribution</h3><div class="cc"><canvas id="c-pl"></canvas></div></div>
+      <div class="card" id="dur-card" data-info="durTrend"><h3>Session Duration Trend</h3><div class="cc"><canvas id="c-dur"></canvas></div></div>
     </div>
   </div>
 </div>
@@ -495,6 +498,32 @@ function render(){
   kpi(kCost,'Cost/Minute',fmt.usd(costMin),`${ds.length} sessions w/ duration`,null,
     {desc:'Time-normalized spend. Reveals if long sessions are cost-efficient or wasteful.',good:'Stable or decreasing',bad:'High and rising \u2014 sessions accumulating expensive context'});
 
+  // Session outcome (heuristic)
+  const prodSess=F.filter(s=>s.edits+s.writes>0).length;
+  const failSess=F.filter(s=>{
+    const sr=s.stop_reasons||{},st=Object.values(sr).reduce((a,b)=>a+b,0);
+    const maxTok=sr.max_tokens||0;
+    if(st>0&&maxTok/st>0.3)return true;
+    if(s.tool_calls>=10&&s.edits+s.writes===0)return true;
+    return false;
+  }).length;
+  const successRate=prodSess/Math.max(n,1),failRate=failSess/Math.max(n,1);
+  kpi(kCost,'Success Rate',fmt.pct(successRate),`${prodSess} productive \u00b7 ${failSess} failed`,successRate>.6?'green':successRate>.3?'yellow':'red',
+    {desc:'Heuristic success rate. Success = session has Edit/Write actions. Failure = max_tokens dominated, or many tool calls with zero production.',good:'Above 60%',bad:'Below 30% \u2014 too many sessions produce nothing'});
+
+  // Retry/waste ratio
+  const retryHeavy=F.filter(s=>{
+    if(s.tool_calls<5)return false;
+    const tc=s.tools||{},vals=Object.values(tc),tot=vals.reduce((a,b)=>a+b,0);
+    if(tot<5)return false;
+    const topV=Math.max(...vals),dom=topV/tot;
+    const bash=(tc.Bash||0)+(tc.bash||0)+(tc.BashOutput||0),br=bash/tot;
+    return dom>0.6||br>0.5;
+  });
+  const retryCost=sum(retryHeavy,'cost'),retryPct=retryHeavy.length/Math.max(F.filter(s=>s.tool_calls>=5).length,1);
+  kpi(kCost,'Retry Ratio',fmt.pct(retryPct),`${retryHeavy.length} sessions \u00b7 ${fmt.usd(retryCost)}`,retryPct<.2?'green':retryPct<.4?'yellow':'red',
+    {desc:'Sessions dominated by a single tool or bash-heavy patterns, indicating retry/debug loops.',good:'Below 20%',bad:'Above 40% \u2014 significant token waste from retries'});
+
   // Cluster 2: Cache & Context
   kpi(kCache,'Output Ratio',fmt.pct(or_net),`${fmt.tok(tpo)} output tokens \u00b7 Gross: ${fmt.pct(or_gross)}`,or_net<0.01?'red':or_net<0.03?'yellow':'green',
     {desc:'Output tokens vs fresh input (excluding cache reads). Net ratio shows how much new output is generated per unit of new input. Gross includes cache replays.',good:'Net above 2% for coding tasks',bad:'Net below 1% means heavy context overhead even after caching'});
@@ -516,6 +545,37 @@ function render(){
     {desc:'Percentage of total cost from spawned subagents. Each subagent duplicates base context. Compaction agents fire when sessions blow the context window.',good:'Below 10% with low compaction',bad:'Above 20% \u2014 consider CLAUDE_CODE_SUBAGENT_MODEL=haiku'});
   if(tbfw.length)kpi(kHealth,'Turns Before Write',(sum(tbfw,v=>v)/tbfw.length).toFixed(1),`Median: ${med(tbfw)} \u00b7 Never: ${nw}`,'accent',
     {desc:'How many exploration tool calls (Read, Bash, Grep) happen before the first production action (Edit, Write). Measures ramp-up time.',good:'Below 10 for focused tasks',bad:'Above 25 \u2014 prompts may be too vague, causing excessive exploration'});
+  // Duration trend: compare first half vs second half
+  if(ds.length>4){
+    const sortedDur=[...ds].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(s=>s.dur/60);
+    const mid=sortedDur.length>>1;
+    const medFirst=sortedDur.slice(0,mid).sort((a,b)=>a-b)[sortedDur.slice(0,mid).length>>1]||0;
+    const medSecond=sortedDur.slice(mid).sort((a,b)=>a-b)[sortedDur.slice(mid).length>>1]||0;
+    const trend=medFirst>0?(medSecond-medFirst)/medFirst:0;
+    const dir=trend>0?'longer':'shorter';
+    kpi(kHealth,'Duration Trend',(trend*100).toFixed(0)+'%',`${medFirst.toFixed(1)} \u2192 ${medSecond.toFixed(1)} min (${dir})`,Math.abs(trend)>.2?'yellow':'green',
+      {desc:'Change in median session duration comparing first half vs second half of sessions (chronological). Positive = sessions getting longer.',good:'Within \u00b120%',bad:'Above +30% \u2014 context bloat creeping in'});
+  }
+
+  // Prompt length
+  const allPL=F.flatMap(s=>s.prompt_lengths||[]).filter(v=>v>0);
+  if(allPL.length>0){
+    const sorted=[...allPL].sort((a,b)=>a-b);
+    const medPL=sorted[sorted.length>>1];
+    const short50=sorted.filter(v=>v<50).length,long10k=sorted.filter(v=>v>=10000).length;
+    kpi(kHealth,'Prompt Length',medPL.toLocaleString()+' chars',`${allPL.length} prompts \u00b7 ${short50} short \u00b7 ${long10k} long`,null,
+      {desc:'Median user prompt length in characters. Short (<50) prompts cause excessive exploration. Long (>10K) prompts waste context \u2014 use files instead.',good:'100-500 chars \u2014 focused and specific',bad:'<50 (vague) or >10K (paste-heavy)'});
+  }
+
+  // Model routing efficiency
+  const opusLight=F.filter(s=>s.model&&s.model.toLowerCase().includes('opus')&&(s.tool_calls<10||s.output<5000));
+  if(opusLight.length>0){
+    const opusCost=sum(opusLight,'cost');
+    const savingsEst=opusCost*0.4;
+    kpi(kHealth,'Routing Savings',fmt.usd(savingsEst),`${opusLight.length} light Opus sessions`,savingsEst>10?'yellow':'green',
+      {desc:'Estimated savings from routing lightweight Opus sessions (<10 tools or <5K output tokens) to Sonnet. Assumes ~40% cost reduction.',good:'Near $0 \u2014 already optimally routed',bad:'Large savings available from model routing'});
+  }
+
   const tlr=sum(F,'lines_read'),tlg=sum(F,'lines_gen'),lrSessions=F.filter(s=>s.lines_read>0||s.lines_gen>0).length;
   if(lrSessions>0)kpi(kHealth,'Lines Read/Generated',tlg>0?(tlr/tlg).toFixed(1)+'x':'\u221e',`${tlr.toLocaleString()} read \u00b7 ${tlg.toLocaleString()} generated`,null,
     {desc:'Ratio of lines read from files vs net lines generated (Write + Edit delta). Shows how much context the AI consumes per line of output.',good:'Below 3x \u2014 focused, efficient generation',bad:'Above 10x \u2014 excessive reading relative to output'});
@@ -599,6 +659,31 @@ function render(){
       options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Exploration calls before first write',color:'#666',font:{size:11}},ticks:{color:'#888',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+' sessions'}}}}});
   } else {tbfwCard.style.display='none'}
 
+  // ── Prompt length histogram ──
+  const plCard=document.getElementById('pl-card');
+  if(allPL.length>0){
+    plCard.style.display='';
+    const plB=[{l:'<50',x:50},{l:'50-200',x:200},{l:'200-500',x:500},{l:'500-2K',x:2000},{l:'2K-10K',x:10000},{l:'10K+',x:Infinity}];
+    const plC=plB.map(()=>0);allPL.forEach(v=>{for(let i=0;i<plB.length;i++){if(v<=plB[i].x){plC[i]++;break}}});
+    mc('c-pl',{type:'bar',data:{labels:plB.map(b=>b.l),datasets:[{data:plC,backgroundColor:['#22c55e','#60a5fa','#7c5aed','#f59e0b','#f97316','#ef4444'],borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Characters',color:'#666',font:{size:11}},ticks:{color:'#888',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+' prompts'}}}}});
+  } else {plCard.style.display='none'}
+
+  // ── Duration trend line ──
+  const durCard=document.getElementById('dur-card');
+  if(ds.length>2){
+    durCard.style.display='';
+    const durByDate=grp(ds.filter(s=>s.date),'date'),durDates=Object.keys(durByDate).sort();
+    const durMeds=durDates.map(d=>{const vals=durByDate[d].map(s=>s.dur/60).sort((a,b)=>a-b);return vals[vals.length>>1]||0});
+    const durRoll=durDates.map((_,i)=>{const start=Math.max(0,i-6);const w=durMeds.slice(start,i+1);return w.reduce((a,b)=>a+b,0)/w.length});
+    mc('c-dur',{type:'line',data:{labels:durDates,datasets:[
+      {label:'Median Duration',data:durMeds,fill:false,borderColor:'#60a5fa',borderWidth:1.5,pointRadius:0,tension:.3},
+      {label:'7d Avg',data:durRoll,borderColor:'#f59e0b',borderWidth:2,borderDash:[6,3],pointRadius:0,tension:.3},
+    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},
+      scales:{x:{ticks:{color:'#666',font:{size:10},maxRotation:45,autoSkip:true,maxTicksLimit:20},grid:{color:'rgba(255,255,255,.03)'}},y:{title:{display:true,text:'Minutes',color:'#666',font:{size:11}},ticks:{color:'#666',font:{size:11}},grid:{color:'rgba(255,255,255,.04)'}}},
+      plugins:{legend:{labels:{color:'#888',font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+ctx.raw.toFixed(1)+' min'}}}}});
+  } else {durCard.style.display='none'}
+
   // ── Platform table ──
   let ph='<thead><tr><th>Platform</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Avg</th><th class="num">Tools</th></tr></thead><tbody>';
   for(const[k,v]of Object.entries(bp)){const c=sum(v,'cost');ph+=`<tr><td>${k}</td><td class="num">${v.length.toLocaleString()}</td><td class="num">${fmt.usd(c)}</td><td class="num">${fmt.usd(c/v.length)}</td><td class="num">${sum(v,'tool_calls').toLocaleString()}</td></tr>`}
@@ -624,6 +709,8 @@ const CARD_INFO={
   health:{title:'Session Size Distribution',desc:'Histogram of session token counts. Most sessions should be under 10M tokens. Sessions over 50M indicate runaway context accumulation \u2014 prime targets for /clear or splitting.',good:'Most sessions in <1M and 1-10M buckets',bad:'Many sessions in 50M+ bucket'},
   tbfw:{title:'Turns Before First Write',desc:'How many exploration tool calls (Read, Bash, Grep) happen before the first production action (Edit, Write). Measures prompt specificity and ramp-up time.',good:'Median below 10 = focused prompts',bad:'Median above 25 = vague prompts causing excessive exploration'},
   platTable:{title:'Platform Comparison',desc:'Side-by-side comparison of all AI coding tools. Shows sessions, total cost, average cost per session, and tool calls. The footer shows tool definition overhead if available.',good:'Cost per session stable across platforms',bad:'One platform disproportionately expensive'},
+  promptLen:{title:'Prompt Length Distribution',desc:'Histogram of user prompt lengths in characters. Short prompts (<50 chars) often lead to excessive exploration as the AI guesses intent. Long prompts (>10K) waste context window — consider using files or CLAUDE.md.',good:'Most prompts 100-500 chars — focused and specific',bad:'Many <50 (vague) or >10K (paste-heavy) prompts'},
+  durTrend:{title:'Session Duration Trend',desc:'Daily median session duration with 7-day rolling average. Upward trends indicate context bloat or scope creep. Downward trends suggest better prompting or session hygiene.',good:'Stable or trending down',bad:'Sustained upward trend — sessions getting longer over time'},
   sessTable:{title:'Most Costly Sessions',desc:'Top sessions ranked by cost. These are your biggest optimization targets. Consider: was the cost justified by output? Could the session have been split earlier?',good:'Top sessions are complex, high-value tasks',bad:'Top sessions are simple tasks that ran too long'},
 };
 

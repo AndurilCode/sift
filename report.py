@@ -83,6 +83,14 @@ def _executive_summary(results: dict[str, MetricResult]) -> str:
     L.append(f"| Caching savings | {usd(cache['estimated_savings_usd'])} |")
     L.append(f"| Projects with AI usage | {adoption['total_projects']:,} |")
 
+    outcome = results["session_outcome"].data
+    L.append(f"| Success rate (heuristic) | {outcome['success_rate']:.1%} |")
+    L.append(f"| Wasted cost (failures) | {usd(outcome['failure_cost'])} |")
+
+    routing = results["model_routing"].data
+    if routing["potential_savings"] > 0:
+        L.append(f"| Model routing savings | {usd(routing['potential_savings'])} ({routing['routing_efficiency']:.0%} efficient) |")
+
     total_premium = sum(v.get("premium_requests", 0) for v in comparison.values())
     if total_premium:
         L.append(f"| Premium requests | {total_premium:,.1f} |")
@@ -111,6 +119,12 @@ def _cost_optimization(results: dict[str, MetricResult], sessions: list[Normaliz
         over50 = [s for s in sessions if s.total_tokens > 50_000_000]
         over50_cost = sum(session_cost(s) for s in over50)
         L.append(f"| {health['sessions_over_50m']} sessions >50M tokens | {usd(over50_cost * 0.3)} | Break sessions earlier, /clear |")
+    routing = results["model_routing"].data
+    if routing["potential_savings"] > 0:
+        L.append(f"| {routing['downgradeable_sessions']} downgradeable sessions | {usd(routing['potential_savings'])} | Route light tasks to cheaper models |")
+    retry = results["retry_ratio"].data
+    if retry["retry_heavy_sessions"] > 0:
+        L.append(f"| {retry['retry_heavy_sessions']} retry-heavy sessions | {usd(retry['retry_cost'] * 0.3)} | Better prompts, break retry loops |")
     L.append(f"| Cache optimization | Saving {usd(cache['estimated_savings_usd'])} | Maintain {cache['cache_hit_rate']:.0%} hit rate |")
     L.append("")
     return "\n".join(L)
